@@ -6,6 +6,7 @@ import threading
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
+from personal_predictive_ai.events.migration import parse_canonical_event
 from personal_predictive_ai.events.models import CanonicalEvent, RetentionClass
 
 _SEQUENCE_HIGH_WATER_KEY = "monotonic_seq_high_water"
@@ -68,7 +69,7 @@ class EventStore:
             ).fetchone()
         if row is None:
             return None
-        return CanonicalEvent.model_validate(json.loads(row["data_json"]))
+        return parse_canonical_event(json.loads(row["data_json"]))
 
     def iter_events(
         self,
@@ -99,7 +100,7 @@ class EventStore:
         with self._lock:
             rows = self._conn.execute(query, params).fetchall()
         for row in rows:
-            yield CanonicalEvent.model_validate(json.loads(row["data_json"]))
+            yield parse_canonical_event(json.loads(row["data_json"]))
 
     def count(self) -> int:
         with self._lock:
@@ -139,7 +140,7 @@ class EventStore:
             expired_ids: list[str] = []
             for row in rows:
                 try:
-                    event = CanonicalEvent.model_validate(json.loads(row["data_json"]))
+                    event = parse_canonical_event(json.loads(row["data_json"]))
                 except (ValueError, TypeError, json.JSONDecodeError):
                     continue
                 if event.retention_class is RetentionClass.STRUCTURED_SHORT:

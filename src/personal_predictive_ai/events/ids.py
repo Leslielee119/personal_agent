@@ -6,7 +6,9 @@ from typing import Any
 
 from personal_predictive_ai.events.models import (
     CanonicalEvent,
+    EventActor,
     EventOrigin,
+    EventProvenance,
     PrivacyTier,
     RetentionClass,
 )
@@ -32,6 +34,10 @@ class EventFactory:
         modality: str,
         origin: EventOrigin,
         event_type: str,
+        actor: EventActor = EventActor.UNKNOWN,
+        provenance: EventProvenance = EventProvenance.UNKNOWN,
+        device: dict[str, Any] | None = None,
+        injected: bool | None = None,
         app: dict[str, Any] | None = None,
         process: dict[str, Any] | None = None,
         window: dict[str, Any] | None = None,
@@ -55,6 +61,10 @@ class EventFactory:
             modality=modality,
             origin=origin,
             event_type=event_type,
+            actor=actor,
+            provenance=provenance,
+            device=device,
+            injected=injected,
             app=app,
             process=process,
             window=window,

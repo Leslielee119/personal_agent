@@ -24,7 +24,7 @@ def test_canonical_event_schema_and_json_safe_payload() -> None:
         retention_class=RetentionClass.STRUCTURED_LONG,
     )
 
-    assert event.schema_version == "ppa.event/v1"
+    assert event.schema_version == "ppa.event/v2"
     assert event.payload["key"] == "a"
 
     with pytest.raises(ValidationError):
