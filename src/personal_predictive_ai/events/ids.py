@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+import threading
+import uuid
+from typing import Any
+
+from personal_predictive_ai.events.models import (
+    CanonicalEvent,
+    EventOrigin,
+    PrivacyTier,
+    RetentionClass,
+)
+
+
+class EventFactory:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._sequence = 0
+
+    def next(
+        self,
+        *,
+        timestamp_ns: int,
+        source: str,
+        modality: str,
+        origin: EventOrigin,
+        event_type: str,
+        app: dict[str, Any] | None = None,
+        process: dict[str, Any] | None = None,
+        window: dict[str, Any] | None = None,
+        session_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+        privacy_tier: PrivacyTier = PrivacyTier.STANDARD,
+        retention_class: RetentionClass = RetentionClass.STRUCTURED_LONG,
+        raw_ref: str | None = None,
+        causal_parent_ids: list[str] | None = None,
+    ) -> CanonicalEvent:
+        with self._lock:
+            self._sequence += 1
+            sequence = self._sequence
+
+        event_id = f"{uuid.uuid4()}:{sequence}"
+        return CanonicalEvent(
+            event_id=event_id,
+            timestamp_ns=timestamp_ns,
+            monotonic_seq=sequence,
+            source=source,
+            modality=modality,
+            origin=origin,
+            event_type=event_type,
+            app=app,
+            process=process,
+            window=window,
+            session_id=session_id,
+            payload=payload or {},
+            privacy_tier=privacy_tier,
+            retention_class=retention_class,
+            raw_ref=raw_ref,
+            causal_parent_ids=causal_parent_ids or [],
+        )
