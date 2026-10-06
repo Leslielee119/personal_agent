@@ -13,7 +13,12 @@ from openadapt_capture.structural import (
 
 from personal_predictive_ai.collector.base import CollectorHealth, PublishCallback
 from personal_predictive_ai.events.ids import EventFactory
-from personal_predictive_ai.events.models import CanonicalEvent, EventOrigin
+from personal_predictive_ai.events.models import (
+    CanonicalEvent,
+    EventActor,
+    EventOrigin,
+    EventProvenance,
+)
 
 
 class Snapshotter(Protocol):
@@ -155,12 +160,23 @@ class OpenAdaptCollector:
             if process and process.get("name"):
                 app = {"name": process["name"]}
 
+        injected = bool(getattr(upstream, "injected", False))
+        actor = EventActor.UNKNOWN if injected else EventActor.HUMAN
+        provenance = (
+            EventProvenance.UNKNOWN
+            if injected
+            else EventProvenance.HUMAN_PHYSICAL
+        )
+
         return self._factory.next(
             timestamp_ns=round(float(upstream.timestamp) * 1_000_000_000),
             source="openadapt_capture",
             modality=modality,
             origin=EventOrigin.ENDOGENOUS,
             event_type=event_type,
+            actor=actor,
+            provenance=provenance,
+            injected=injected,
             app=app,
             process=process,
             window=window,

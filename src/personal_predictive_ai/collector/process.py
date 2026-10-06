@@ -9,7 +9,11 @@ import psutil
 
 from personal_predictive_ai.collector.base import CollectorHealth, PublishCallback
 from personal_predictive_ai.events.ids import EventFactory
-from personal_predictive_ai.events.models import EventOrigin
+from personal_predictive_ai.events.models import (
+    EventActor,
+    EventOrigin,
+    EventProvenance,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +145,8 @@ class ProcessCollector:
             source="windows_process",
             modality="process",
             origin=EventOrigin.EXOGENOUS,
+            actor=EventActor.SYSTEM,
+            provenance=EventProvenance.SYSTEM,
             event_type=event_type,
             app={"name": sample.name} if sample.name else None,
             process={

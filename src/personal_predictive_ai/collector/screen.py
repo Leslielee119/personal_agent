@@ -8,7 +8,9 @@ from typing import Any
 from personal_predictive_ai.events.ids import EventFactory
 from personal_predictive_ai.events.models import (
     CanonicalEvent,
+    EventActor,
     EventOrigin,
+    EventProvenance,
     PrivacyTier,
     RetentionClass,
 )
@@ -63,6 +65,8 @@ class ScreenSnapshotter:
             source="desktop_screen",
             modality="screen",
             origin=EventOrigin.EXOGENOUS,
+            actor=EventActor.SYSTEM,
+            provenance=EventProvenance.SYSTEM,
             event_type="screen.snapshot",
             payload={
                 "trigger": reason,

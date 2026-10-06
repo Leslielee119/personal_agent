@@ -11,7 +11,11 @@ import psutil
 
 from personal_predictive_ai.collector.base import CollectorHealth, PublishCallback
 from personal_predictive_ai.events.ids import EventFactory
-from personal_predictive_ai.events.models import EventOrigin
+from personal_predictive_ai.events.models import (
+    EventActor,
+    EventOrigin,
+    EventProvenance,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +149,8 @@ class ForegroundWindowCollector:
             source="windows_foreground",
             modality="window",
             origin=EventOrigin.EXOGENOUS,
+            actor=EventActor.SYSTEM,
+            provenance=EventProvenance.SYSTEM,
             event_type=event_type,
             app={"name": current.process_name} if current.process_name else None,
             process={

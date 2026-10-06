@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
@@ -7,7 +7,9 @@ from typing import Protocol
 from personal_predictive_ai.collector.base import CollectorHealth, PublishCallback
 from personal_predictive_ai.events.ids import EventFactory
 from personal_predictive_ai.events.models import (
+    EventActor,
     EventOrigin,
+    EventProvenance,
     PrivacyTier,
     RetentionClass,
 )
@@ -20,6 +22,7 @@ class NotificationRecord:
     body: str | None
     notification_id: str | None
     timestamp_ns: int
+    external_source: bool | None = None
 
 
 class NotificationBackend(Protocol):
@@ -119,12 +122,24 @@ class WindowsNotificationCollector:
             privacy_tier = PrivacyTier.SENSITIVE
             retention_class = RetentionClass.STRUCTURED_SHORT
 
+        if record.external_source is True:
+            actor = EventActor.EXTERNAL
+            provenance = EventProvenance.EXTERNAL
+        elif record.external_source is False:
+            actor = EventActor.SYSTEM
+            provenance = EventProvenance.SYSTEM
+        else:
+            actor = EventActor.UNKNOWN
+            provenance = EventProvenance.UNKNOWN
+
         event = self._factory.next(
             timestamp_ns=record.timestamp_ns,
             source="windows_notification",
             modality="notification",
             origin=EventOrigin.EXOGENOUS,
             event_type="notification.received",
+            actor=actor,
+            provenance=provenance,
             app={"name": record.app_name} if record.app_name else None,
             payload=payload,
             privacy_tier=privacy_tier,

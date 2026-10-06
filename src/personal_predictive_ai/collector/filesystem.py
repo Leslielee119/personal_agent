@@ -10,7 +10,11 @@ from watchdog.observers import Observer
 
 from personal_predictive_ai.collector.base import CollectorHealth, PublishCallback
 from personal_predictive_ai.events.ids import EventFactory
-from personal_predictive_ai.events.models import EventOrigin
+from personal_predictive_ai.events.models import (
+    EventActor,
+    EventOrigin,
+    EventProvenance,
+)
 
 ClockNs = Callable[[], int]
 
@@ -114,6 +118,8 @@ class FilesystemCollector:
             source="watchdog",
             modality="filesystem",
             origin=EventOrigin.EXOGENOUS,
+            actor=EventActor.SYSTEM,
+            provenance=EventProvenance.SYSTEM,
             event_type=f"filesystem.{kind}",
             payload=payload,
         )
