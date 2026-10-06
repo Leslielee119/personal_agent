@@ -14,6 +14,9 @@ dependencies = [
   "watchdog>=4,<7",
 ]
 
+[project.scripts]
+ppa = "personal_predictive_ai.cli:main"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8,<10",
