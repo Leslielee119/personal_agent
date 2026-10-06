@@ -1,4 +1,3 @@
-from personal_predictive_ai.collector.base import Collector, CollectorHealth
-from personal_predictive_ai.collector.openadapt import OpenAdaptCollector
+﻿from personal_predictive_ai.collector.base import Collector, CollectorHealth
 
-__all__ = ["Collector", "CollectorHealth", "OpenAdaptCollector"]
+__all__ = ["Collector", "CollectorHealth"]
