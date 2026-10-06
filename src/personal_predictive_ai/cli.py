@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import argparse
 import json
@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Sequence
 
-from personal_predictive_ai.collector.base import Collector
+from personal_predictive_ai.collector.base import Collector, CollectorContext
 from personal_predictive_ai.config import Settings
 from personal_predictive_ai.events.ids import EventFactory
 from personal_predictive_ai.runtime.service import CaptureService, ServiceStatus
@@ -28,15 +28,60 @@ def _status_payload(status: ServiceStatus, *, offline_mode: bool) -> dict[str, o
     return payload
 
 
-def _collector_factory(*, use_openadapt: bool):
-    def build(factory: EventFactory) -> list[Collector]:
+def _collector_factory(
+    *,
+    use_openadapt: bool,
+    watch_roots: tuple[Path, ...] = (),
+):
+    def build(context: CollectorContext) -> list[Collector]:
         from personal_predictive_ai.collector.process import ProcessCollector
+        from personal_predictive_ai.collector.windows_foreground import (
+            ForegroundWindowCollector,
+        )
+        from personal_predictive_ai.collector.windows_notifications import (
+            WindowsNotificationCollector,
+        )
 
-        collectors: list[Collector] = [ProcessCollector(factory=factory)]
+        factory = context.event_factory
+        collectors: list[Collector] = [
+            ProcessCollector(factory=factory),
+            ForegroundWindowCollector(factory=factory),
+            WindowsNotificationCollector(factory=factory),
+        ]
+        if watch_roots:
+            from personal_predictive_ai.collector.filesystem import FilesystemCollector
+
+            excluded_paths: list[Path] = [context.raw_ring.root.parent]
+            for root in watch_roots:
+                excluded_paths.extend(
+                    root / name
+                    for name in (
+                        ".git",
+                        ".venv",
+                        ".pytest_cache",
+                        "node_modules",
+                        "__pycache__",
+                    )
+                )
+            collectors.append(
+                FilesystemCollector(
+                    factory=factory,
+                    roots=watch_roots,
+                    excluded_paths=excluded_paths,
+                )
+            )
         if use_openadapt:
             from personal_predictive_ai.collector.openadapt import OpenAdaptCollector
+            from personal_predictive_ai.collector.screen import ScreenSnapshotter
 
-            collectors.append(OpenAdaptCollector(factory=factory, capture_structural=True))
+            snapshotter = ScreenSnapshotter(factory=factory, raw_ring=context.raw_ring)
+            collectors.append(
+                OpenAdaptCollector(
+                    factory=factory,
+                    capture_structural=True,
+                    snapshotter=snapshotter,
+                )
+            )
         return collectors
 
     return build
@@ -50,11 +95,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     capture = subparsers.add_parser("capture")
     capture.add_argument("--duration", type=float, default=None)
+    capture.add_argument("--stop-file", type=Path, default=None)
+    capture.add_argument("--watch-root", type=Path, action="append", default=[])
     capture.add_argument(
         "--openadapt",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="enable native keyboard/mouse/UIA capture",
+        help="enable native keyboard/mouse/UIA plus event-driven screen capture",
     )
 
     subparsers.add_parser("status")
@@ -85,20 +132,40 @@ def main(argv: Sequence[str] | None = None) -> int:
             service.close()
         return 0
 
+    watch_roots = tuple(Path(path).resolve() for path in args.watch_root)
     service = CaptureService(
         settings=settings,
         collectors=[],
         event_factory=factory,
-        collector_factory=_collector_factory(use_openadapt=args.openadapt),
+        collector_factory=_collector_factory(
+            use_openadapt=args.openadapt,
+            watch_roots=watch_roots,
+        ),
     )
     try:
         service.start()
-        deadline = None if args.duration is None else time.monotonic() + max(0.0, args.duration)
+        now = time.monotonic()
+        deadline = None if args.duration is None else now + max(0.0, args.duration)
+        maintenance_period = max(1.0, min(30.0, settings.raw_ttl_seconds / 4.0))
+        next_raw_maintenance = now + maintenance_period
+        structured_maintenance_period = 300.0
+        next_structured_maintenance = now + structured_maintenance_period
         while deadline is None or time.monotonic() < deadline:
+            if args.stop_file is not None and args.stop_file.exists():
+                break
+            now = time.monotonic()
+            if now >= next_raw_maintenance:
+                service.expire_raw()
+                next_raw_maintenance = now + maintenance_period
+            if now >= next_structured_maintenance:
+                service.expire_structured_short()
+                next_structured_maintenance = now + structured_maintenance_period
             time.sleep(0.05)
     except KeyboardInterrupt:
         pass
     finally:
+        service.expire_raw()
+        service.expire_structured_short()
         service.stop()
         payload = _status_payload(service.status(), offline_mode=settings.offline_mode)
         service.close()

@@ -17,6 +17,13 @@ class EventFactory:
         self._lock = threading.Lock()
         self._sequence = 0
 
+    def ensure_at_least(self, sequence: int) -> None:
+        if sequence < 0:
+            raise ValueError("sequence floor must be non-negative")
+        with self._lock:
+            if sequence > self._sequence:
+                self._sequence = sequence
+
     def next(
         self,
         *,

@@ -6,7 +6,9 @@ import threading
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from personal_predictive_ai.events.models import CanonicalEvent
+from personal_predictive_ai.events.models import CanonicalEvent, RetentionClass
+
+_SEQUENCE_HIGH_WATER_KEY = "monotonic_seq_high_water"
 
 
 class EventStore:
@@ -31,7 +33,9 @@ class EventStore:
         self.append_many([event])
 
     def append_many(self, events: Iterable[CanonicalEvent]) -> None:
-        rows = [self._row(event) for event in events]
+        materialized = list(events)
+        rows = [self._row(event) for event in materialized]
+        high_water = max((event.monotonic_seq for event in materialized), default=0)
         with self._lock, self._conn:
             self._conn.executemany(
                 """
@@ -40,6 +44,21 @@ class EventStore:
                 """,
                 rows,
             )
+            if high_water > 0:
+                row = self._conn.execute(
+                    "SELECT value FROM runtime_metadata WHERE key = ?",
+                    (_SEQUENCE_HIGH_WATER_KEY,),
+                ).fetchone()
+                if row is None:
+                    self._conn.execute(
+                        "INSERT INTO runtime_metadata(key, value) VALUES (?, ?)",
+                        (_SEQUENCE_HIGH_WATER_KEY, high_water),
+                    )
+                elif high_water > int(row["value"]):
+                    self._conn.execute(
+                        "UPDATE runtime_metadata SET value = ? WHERE key = ?",
+                        (high_water, _SEQUENCE_HIGH_WATER_KEY),
+                    )
 
     def get(self, event_id: str) -> CanonicalEvent | None:
         with self._lock:
@@ -86,6 +105,54 @@ class EventStore:
         with self._lock:
             row = self._conn.execute("SELECT COUNT(*) AS n FROM canonical_events").fetchone()
         return int(row["n"])
+
+    def sequence_high_water(self) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM runtime_metadata WHERE key = ?",
+                (_SEQUENCE_HIGH_WATER_KEY,),
+            ).fetchone()
+            if row is not None:
+                return int(row["value"])
+            legacy = self._conn.execute(
+                "SELECT COALESCE(MAX(monotonic_seq), 0) AS n FROM canonical_events"
+            ).fetchone()
+        return int(legacy["n"])
+
+    def expire_structured_short(self, *, now_ns: int, ttl_seconds: int) -> int:
+        if ttl_seconds < 1:
+            raise ValueError("ttl_seconds must be positive")
+        cutoff_ns = now_ns - ttl_seconds * 1_000_000_000
+        if cutoff_ns < 0:
+            return 0
+
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT event_id, data_json
+                FROM canonical_events
+                WHERE timestamp_ns <= ?
+                ORDER BY timestamp_ns ASC, monotonic_seq ASC
+                """,
+                (cutoff_ns,),
+            ).fetchall()
+            expired_ids: list[str] = []
+            for row in rows:
+                try:
+                    event = CanonicalEvent.model_validate(json.loads(row["data_json"]))
+                except (ValueError, TypeError, json.JSONDecodeError):
+                    continue
+                if event.retention_class is RetentionClass.STRUCTURED_SHORT:
+                    expired_ids.append(str(row["event_id"]))
+
+            if not expired_ids:
+                return 0
+            with self._conn:
+                self._conn.executemany(
+                    "DELETE FROM canonical_events WHERE event_id = ?",
+                    [(event_id,) for event_id in expired_ids],
+                )
+            return len(expired_ids)
 
     def integrity_check(self) -> str:
         with self._lock:

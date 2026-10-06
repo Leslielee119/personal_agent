@@ -65,3 +65,51 @@ def test_integrity_check_reports_ok(tmp_path: Path) -> None:
 
     assert store.integrity_check() == "ok"
     store.close()
+
+
+def test_expire_structured_short_removes_only_expired_short_rows(tmp_path: Path) -> None:
+    from personal_predictive_ai.events.models import RetentionClass
+
+    store = EventStore(tmp_path / "events.db")
+    old_short = _event("old-short", 1_000_000_000, 1).model_copy(
+        update={"retention_class": RetentionClass.STRUCTURED_SHORT}
+    )
+    fresh_short = _event("fresh-short", 9_000_000_000, 2).model_copy(
+        update={"retention_class": RetentionClass.STRUCTURED_SHORT}
+    )
+    old_long = _event("old-long", 1_000_000_000, 3).model_copy(
+        update={"retention_class": RetentionClass.STRUCTURED_LONG}
+    )
+    store.append_many([old_short, fresh_short, old_long])
+
+    expired = store.expire_structured_short(
+        now_ns=10_000_000_000,
+        ttl_seconds=5,
+    )
+
+    assert expired == 1
+    assert store.get("old-short") is None
+    assert store.get("fresh-short") is not None
+    assert store.get("old-long") is not None
+    store.close()
+
+
+def test_sequence_high_water_survives_short_row_expiry_and_restart(tmp_path: Path) -> None:
+    from personal_predictive_ai.events.models import RetentionClass
+
+    db_path = tmp_path / "events.db"
+    store = EventStore(db_path)
+    event = _event("latest-short", 1_000_000_000, 9).model_copy(
+        update={"retention_class": RetentionClass.STRUCTURED_SHORT}
+    )
+    store.append(event)
+
+    assert store.sequence_high_water() == 9
+    assert store.expire_structured_short(now_ns=10_000_000_000, ttl_seconds=5) == 1
+    assert store.count() == 0
+    assert store.sequence_high_water() == 9
+    store.close()
+
+    reopened = EventStore(db_path)
+    assert reopened.sequence_high_water() == 9
+    reopened.close()

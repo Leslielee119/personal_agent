@@ -107,3 +107,145 @@ def test_non_sensitive_event_is_unchanged() -> None:
     sanitized = sanitize_event(event, PrivacyPolicy())
 
     assert sanitized == event
+
+
+def test_secure_uia_context_redacts_sibling_keystroke_content() -> None:
+    event = _event(
+        modality="keyboard",
+        event_type="key.down",
+        payload={
+            "key_name": "p",
+            "key_char": "p",
+            "key_vk": "80",
+            "canonical_key_name": "p",
+            "canonical_key_char": "p",
+            "canonical_key_vk": "80",
+            "structural": {
+                "role": "PasswordBox",
+                "name": "Password",
+                "automation_id": "login_password",
+            },
+        },
+    )
+
+    sanitized = sanitize_event(event, PrivacyPolicy())
+
+    assert sanitized is not None
+    assert sanitized.payload["structural"]["role"] == "PasswordBox"
+    assert sanitized.payload["structural"]["automation_id"] == "login_password"
+    for field in (
+        "key_name",
+        "key_char",
+        "key_vk",
+        "canonical_key_name",
+        "canonical_key_char",
+        "canonical_key_vk",
+    ):
+        assert sanitized.payload[field] == "[REDACTED]"
+    assert sanitized.privacy_tier is PrivacyTier.SECRET
+
+
+def test_unverified_keydown_fails_closed_and_redacts_key_content() -> None:
+    event = _event(
+        modality="keyboard",
+        event_type="key.down",
+        payload={
+            "key_name": "a",
+            "key_char": "a",
+            "key_vk": "65",
+            "canonical_key_char": "a",
+        },
+    )
+
+    sanitized = sanitize_event(event, PrivacyPolicy())
+
+    assert sanitized is not None
+    assert sanitized.payload["key_char"] == "[REDACTED]"
+    assert sanitized.payload["key_name"] == "[REDACTED]"
+    assert sanitized.payload["key_vk"] == "[REDACTED]"
+    assert sanitized.payload["canonical_key_char"] == "[REDACTED]"
+
+
+def test_verified_non_secure_keydown_keeps_character_content() -> None:
+    event = _event(
+        modality="keyboard",
+        event_type="key.down",
+        payload={
+            "key_name": "a",
+            "key_char": "a",
+            "structural": {
+                "role": "Edit",
+                "name": "Code Editor",
+                "automation_id": "editor",
+            },
+        },
+    )
+
+    sanitized = sanitize_event(event, PrivacyPolicy())
+
+    assert sanitized is not None
+    assert sanitized.payload["key_name"] == "a"
+    assert sanitized.payload["key_char"] == "a"
+
+
+def test_keyup_always_drops_redundant_character_content() -> None:
+    event = _event(
+        modality="keyboard",
+        event_type="key.up",
+        payload={
+            "key_name": "a",
+            "key_char": "a",
+            "key_vk": "65",
+            "structural": {
+                "role": "Edit",
+                "name": "Code Editor",
+                "automation_id": "editor",
+            },
+        },
+    )
+
+    sanitized = sanitize_event(event, PrivacyPolicy())
+
+    assert sanitized is not None
+    assert sanitized.payload["key_name"] == "[REDACTED]"
+    assert sanitized.payload["key_char"] == "[REDACTED]"
+    assert sanitized.payload["key_vk"] == "[REDACTED]"
+
+
+def test_unverified_keytype_redacts_text_and_child_key_content() -> None:
+    event = _event(
+        modality="keyboard",
+        event_type="key.type",
+        payload={
+            "text": "secret-ish",
+            "children": [{"key_char": "s"}, {"key_char": "e"}],
+        },
+    )
+
+    sanitized = sanitize_event(event, PrivacyPolicy())
+
+    assert sanitized is not None
+    assert sanitized.payload["text"] == "[REDACTED]"
+    assert sanitized.payload["children"][0]["key_char"] == "[REDACTED]"
+
+
+def test_verified_keydown_is_sensitive_short_retention() -> None:
+    event = _event(
+        modality="keyboard",
+        event_type="key.down",
+        payload={
+            "key_char": "a",
+            "structural": {
+                "role": "Edit",
+                "name": "Code Editor",
+                "automation_id": "editor",
+            },
+        },
+    )
+
+    sanitized = sanitize_event(event, PrivacyPolicy())
+
+    assert sanitized is not None
+    assert sanitized.payload["key_char"] == "a"
+    assert sanitized.privacy_tier is PrivacyTier.SENSITIVE
+    assert sanitized.retention_class is RetentionClass.STRUCTURED_SHORT

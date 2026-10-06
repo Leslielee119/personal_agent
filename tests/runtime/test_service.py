@@ -191,3 +191,100 @@ def test_collector_factory_runs_after_offline_guard_is_installed(tmp_path: Path)
         assert observed["guard_active"] is True
     finally:
         service.stop()
+
+
+def test_collector_factory_receives_event_factory_and_raw_ring_context(tmp_path: Path) -> None:
+    observed = {"factory": False, "raw_ring": False}
+
+    def collector_factory(context):
+        observed["factory"] = isinstance(context.event_factory, EventFactory)
+        ref = context.raw_ring.put(b"fixture", ".bin")
+        observed["raw_ring"] = context.raw_ring.resolve(ref) is not None
+        return []
+
+    service = CaptureService(
+        settings=_settings(tmp_path, offline=True),
+        collectors=[],
+        event_factory=EventFactory(),
+        collector_factory=collector_factory,
+    )
+
+    service.start()
+    try:
+        assert observed == {"factory": True, "raw_ring": True}
+    finally:
+        service.stop()
+
+
+def test_service_expires_structured_short_using_configured_retention(tmp_path: Path) -> None:
+    from personal_predictive_ai.events.models import RetentionClass
+
+    factory = EventFactory()
+    short_event = factory.next(
+        timestamp_ns=1_000_000_000,
+        source="fixture",
+        modality="keyboard",
+        origin=EventOrigin.ENDOGENOUS,
+        event_type="key.down",
+        retention_class=RetentionClass.STRUCTURED_SHORT,
+    )
+    long_event = factory.next(
+        timestamp_ns=1_000_000_000,
+        source="fixture",
+        modality="window",
+        origin=EventOrigin.EXOGENOUS,
+        event_type="window.foreground.current",
+        retention_class=RetentionClass.STRUCTURED_LONG,
+    )
+    service = CaptureService(
+        settings=_settings(tmp_path),
+        collectors=[],
+        event_factory=factory,
+    )
+    service.event_store.append_many([short_event, long_event])
+
+    expired = service.expire_structured_short(
+        now_ns=1_000_000_000 + 31 * 24 * 60 * 60 * 1_000_000_000
+    )
+
+    assert expired == 1
+    assert service.event_store.get(short_event.event_id) is None
+    assert service.event_store.get(long_event.event_id) is not None
+    service.close()
+
+
+def test_service_restart_continues_persisted_monotonic_sequence(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+
+    def collector_factory(context):
+        event = context.event_factory.next(
+            timestamp_ns=time.time_ns(),
+            source="restart-fixture",
+            modality="system",
+            origin=EventOrigin.EXOGENOUS,
+            event_type="system.restart-fixture",
+        )
+        return [FakeCollector(name="restart-fixture", event=event)]
+
+    first = CaptureService(
+        settings=settings,
+        collectors=[],
+        event_factory=EventFactory(),
+        collector_factory=collector_factory,
+    )
+    first.start()
+    first.stop()
+    first.close()
+
+    second = CaptureService(
+        settings=settings,
+        collectors=[],
+        event_factory=EventFactory(),
+        collector_factory=collector_factory,
+    )
+    second.start()
+    stored = list(second.event_store.iter_events())
+
+    assert [event.monotonic_seq for event in stored] == [1, 2]
+    second.stop()
+    second.close()

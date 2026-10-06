@@ -1,6 +1,7 @@
 param(
     [double]$DurationSeconds = 5.0,
-    [string]$DataDir = ""
+    [string]$DataDir = "",
+    [switch]$NoOpenAdapt
 )
 
 $ErrorActionPreference = "Stop"
@@ -14,6 +15,24 @@ if ([string]::IsNullOrWhiteSpace($DataDir)) {
 }
 New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
+function Get-ProcessTreeIds([int]$RootPid) {
+    $rows = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)
+    $ids = @($RootPid)
+    $changed = $true
+    while ($changed) {
+        $changed = $false
+        foreach ($row in $rows) {
+            $pidValue = [int]$row.ProcessId
+            $parentValue = [int]$row.ParentProcessId
+            if (($ids -contains $parentValue) -and -not ($ids -contains $pidValue)) {
+                $ids += $pidValue
+                $changed = $true
+            }
+        }
+    }
+    return @($ids | Sort-Object -Unique)
+}
+
 $stdout = Join-Path $DataDir "capture.stdout.log"
 $stderr = Join-Path $DataDir "capture.stderr.log"
 Remove-Item $stdout, $stderr -Force -ErrorAction SilentlyContinue
@@ -24,7 +43,10 @@ $durationText = [string]::Format(
     $DurationSeconds
 )
 $escapedDataDir = $DataDir.Replace('"', '\"')
-$arguments = "-m personal_predictive_ai.cli --data-dir `"$escapedDataDir`" capture --duration $durationText --no-openadapt"
+$arguments = "-m personal_predictive_ai.cli --data-dir `"$escapedDataDir`" capture --duration $durationText"
+if ($NoOpenAdapt) {
+    $arguments += " --no-openadapt"
+}
 
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $Python
@@ -39,18 +61,27 @@ if (-not $proc.Start()) {
 }
 
 $external = @()
+$auditedIds = @()
 $outText = ""
 $errText = ""
 $exitCode = $null
 try {
     while (-not $proc.HasExited) {
-        $connections = Get-NetTCPConnection -OwningProcess $proc.Id -State Established -ErrorAction SilentlyContinue
-        foreach ($connection in $connections) {
-            $ip = $null
-            $parsed = [System.Net.IPAddress]::TryParse($connection.RemoteAddress, [ref]$ip)
-            $isLoopback = $parsed -and [System.Net.IPAddress]::IsLoopback($ip)
-            if (-not $isLoopback) {
-                $external += $connection
+        $treeIds = Get-ProcessTreeIds $proc.Id
+        $auditedIds += $treeIds
+        foreach ($treePid in $treeIds) {
+            $connections = Get-NetTCPConnection -OwningProcess $treePid -State Established -ErrorAction SilentlyContinue
+            foreach ($connection in $connections) {
+                $ip = $null
+                $parsed = [System.Net.IPAddress]::TryParse($connection.RemoteAddress, [ref]$ip)
+                $isLoopback = $parsed -and [System.Net.IPAddress]::IsLoopback($ip)
+                if (-not $isLoopback) {
+                    $external += [pscustomobject]@{
+                        pid = $treePid
+                        remote_address = $connection.RemoteAddress
+                        remote_port = $connection.RemotePort
+                    }
+                }
             }
         }
         if ($external.Count -gt 0) {
@@ -78,7 +109,9 @@ if ($exitCode -ne 0) {
     throw "Capture runtime exited with code ${exitCode}: $errText"
 }
 
-Write-Output "OFFLINE_AUDIT_OK external_established=0"
+$uniqueAudited = @($auditedIds | Sort-Object -Unique)
+Write-Output "OFFLINE_AUDIT_OK external_established=0 audited_processes=$($uniqueAudited.Count)"
+Write-Output ("audited_pids=" + ($uniqueAudited -join ','))
 if ($outText) {
     Write-Output $outText.Trim()
 }

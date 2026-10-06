@@ -1,6 +1,8 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import threading
+from collections.abc import Callable
+from typing import Any, Protocol
 
 from openadapt_capture.events import BaseEvent, KeyDownEvent, MouseDownEvent
 from openadapt_capture.input import InputListener
@@ -14,6 +16,20 @@ from personal_predictive_ai.events.ids import EventFactory
 from personal_predictive_ai.events.models import CanonicalEvent, EventOrigin
 
 
+class Snapshotter(Protocol):
+    def capture(self, *, reason: str, timestamp_ns: int | None = None) -> CanonicalEvent: ...
+
+
+ListenerFactory = Callable[[Callable[[BaseEvent], None], bool], Any]
+
+
+def _default_listener_factory(
+    callback: Callable[[BaseEvent], None],
+    capture_mouse_moves: bool,
+) -> InputListener:
+    return InputListener(callback, capture_mouse_moves=capture_mouse_moves)
+
+
 class OpenAdaptCollector:
     def __init__(
         self,
@@ -22,14 +38,25 @@ class OpenAdaptCollector:
         capture_structural: bool = True,
         capture_mouse_moves: bool = False,
         session_id: str | None = None,
+        snapshotter: Snapshotter | None = None,
+        listener_factory: ListenerFactory = _default_listener_factory,
+        capture_initial_screen: bool = True,
+        typing_pause_seconds: float = 0.75,
+        pointer_snapshot_delay: float = 0.05,
     ) -> None:
         self._factory = factory
         self._capture_structural = capture_structural
         self._capture_mouse_moves = capture_mouse_moves
         self._session_id = session_id
-        self._listener: InputListener | None = None
+        self._snapshotter = snapshotter
+        self._listener_factory = listener_factory
+        self._capture_initial_screen = capture_initial_screen
+        self._typing_pause_seconds = max(0.0, typing_pause_seconds)
+        self._pointer_snapshot_delay = max(0.0, pointer_snapshot_delay)
+        self._listener: Any | None = None
         self._structural_observer = None
         self._publish: PublishCallback | None = None
+        self._snapshot_timer: threading.Timer | None = None
         self._lock = threading.RLock()
         self._running = False
         self._available = True
@@ -37,6 +64,7 @@ class OpenAdaptCollector:
         self._events_published = 0
         self._structural_available = False
         self._structural_observations = 0
+        self._screen_observations = 0
 
     def start(self, publish: PublishCallback) -> None:
         with self._lock:
@@ -49,9 +77,9 @@ class OpenAdaptCollector:
                 if not self._structural_available:
                     self._detail = "native structural observer unavailable"
             try:
-                self._listener = InputListener(
+                self._listener = self._listener_factory(
                     self._handle_upstream,
-                    capture_mouse_moves=self._capture_mouse_moves,
+                    self._capture_mouse_moves,
                 )
                 self._listener.start()
             except Exception as exc:
@@ -62,12 +90,19 @@ class OpenAdaptCollector:
                 raise
             self._running = True
 
+        if self._capture_initial_screen and self._snapshotter is not None:
+            self._schedule_snapshot("session.start", 0.0)
+
     def stop(self) -> None:
         with self._lock:
             listener = self._listener
+            timer = self._snapshot_timer
             self._listener = None
+            self._snapshot_timer = None
             self._running = False
             self._publish = None
+        if timer is not None:
+            timer.cancel()
         if listener is not None:
             listener.stop()
 
@@ -80,6 +115,7 @@ class OpenAdaptCollector:
                 events_published=self._events_published,
                 structural_available=self._structural_available,
                 structural_observations=self._structural_observations,
+                screen_observations=self._screen_observations,
             )
 
     def translate(self, upstream: BaseEvent) -> CanonicalEvent:
@@ -142,6 +178,45 @@ class OpenAdaptCollector:
             publish(mapped)
             with self._lock:
                 self._events_published += 1
+
+        if isinstance(upstream, MouseDownEvent):
+            self._schedule_snapshot("mouse.down", self._pointer_snapshot_delay)
+        elif isinstance(upstream, KeyDownEvent):
+            self._schedule_snapshot("typing.pause", self._typing_pause_seconds)
+
+    def _schedule_snapshot(self, reason: str, delay: float) -> None:
+        if self._snapshotter is None:
+            return
+        with self._lock:
+            if not self._running or self._publish is None:
+                return
+            previous = self._snapshot_timer
+            if previous is not None:
+                previous.cancel()
+            timer = threading.Timer(delay, self._emit_snapshot, args=(reason,))
+            timer.daemon = True
+            self._snapshot_timer = timer
+            timer.start()
+
+    def _emit_snapshot(self, reason: str) -> None:
+        with self._lock:
+            if not self._running:
+                return
+            snapshotter = self._snapshotter
+            publish = self._publish
+            self._snapshot_timer = None
+        if snapshotter is None or publish is None:
+            return
+        try:
+            event = snapshotter.capture(reason=reason)
+            publish(event)
+        except Exception as exc:
+            with self._lock:
+                self._detail = f"screen snapshot failed: {type(exc).__name__}: {exc}"
+            return
+        with self._lock:
+            self._events_published += 1
+            self._screen_observations += 1
 
     def _attach_structural(self, upstream: BaseEvent) -> BaseEvent:
         observer = self._structural_observer

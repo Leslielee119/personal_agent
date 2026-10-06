@@ -94,3 +94,27 @@ def test_negative_or_zero_monotonic_sequence_is_rejected() -> None:
             origin=EventOrigin.EXOGENOUS,
             event_type="system.test",
         )
+
+
+def test_factory_can_advance_to_persisted_sequence_floor_without_going_backward() -> None:
+    factory = EventFactory()
+    factory.ensure_at_least(41)
+
+    first = factory.next(
+        timestamp_ns=1,
+        source="unit",
+        modality="system",
+        origin=EventOrigin.EXOGENOUS,
+        event_type="system.test",
+    )
+    factory.ensure_at_least(3)
+    second = factory.next(
+        timestamp_ns=2,
+        source="unit",
+        modality="system",
+        origin=EventOrigin.EXOGENOUS,
+        event_type="system.test",
+    )
+
+    assert first.monotonic_seq == 42
+    assert second.monotonic_seq == 43

@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from personal_predictive_ai.collector.base import Collector, CollectorHealth
+from personal_predictive_ai.collector.base import (
+    Collector,
+    CollectorContext,
+    CollectorHealth,
+)
 from personal_predictive_ai.config import Settings
 from personal_predictive_ai.events.bus import EventBus, PublishResult
 from personal_predictive_ai.events.ids import EventFactory
@@ -15,7 +20,7 @@ from personal_predictive_ai.runtime.offline_guard import OfflineNetworkGuard
 from personal_predictive_ai.storage.raw_ring import RawRing
 from personal_predictive_ai.storage.sqlite_store import EventStore
 
-CollectorFactory = Callable[[EventFactory], Iterable[Collector]]
+CollectorFactory = Callable[[CollectorContext], Iterable[Collector]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +53,7 @@ class CaptureService:
         data_dir = Path(settings.data_dir)
         data_dir.mkdir(parents=True, exist_ok=True)
         self.event_store = EventStore(data_dir / "events.db")
+        self.event_factory.ensure_at_least(self.event_store.sequence_high_water())
         self.raw_ring = RawRing(
             data_dir / "raw",
             ttl_seconds=settings.raw_ttl_seconds,
@@ -75,8 +81,12 @@ class CaptureService:
         self._started_collectors = []
         self._collectors = list(self._static_collectors)
         if self._collector_factory is not None:
+            context = CollectorContext(
+                event_factory=self.event_factory,
+                raw_ring=self.raw_ring,
+            )
             try:
-                self._collectors.extend(self._collector_factory(self.event_factory))
+                self._collectors.extend(self._collector_factory(context))
             except Exception as exc:
                 self._provider_errors["collector_factory"] = f"{type(exc).__name__}: {exc}"
 
@@ -120,6 +130,14 @@ class CaptureService:
 
     def expire_raw(self, *, now_ns: int | None = None) -> int:
         return self.raw_ring.expire(now_ns=now_ns)
+
+    def expire_structured_short(self, *, now_ns: int | None = None) -> int:
+        current_ns = time.time_ns() if now_ns is None else now_ns
+        ttl_seconds = self.settings.structured_retention_days * 24 * 60 * 60
+        return self.event_store.expire_structured_short(
+            now_ns=current_ns,
+            ttl_seconds=ttl_seconds,
+        )
 
     def status(self) -> ServiceStatus:
         event_count = self.event_store.count() if not self._closed else 0

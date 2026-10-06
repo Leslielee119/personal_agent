@@ -1,4 +1,4 @@
-import json
+﻿import json
 import sys
 import time
 
@@ -113,6 +113,7 @@ def test_secure_structural_tree_is_marked_for_canonical_sanitizer() -> None:
     serialized = json.dumps(sanitized.model_dump(mode="json"))
     assert "hunter2" not in serialized
     assert "PasswordBox" in serialized
+    assert sanitized.payload["key_char"] == "[REDACTED]"
 
 
 @pytest.mark.slow

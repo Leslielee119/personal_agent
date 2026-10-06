@@ -58,7 +58,7 @@ class PrivacyPolicy:
                 reason="excluded_window",
             )
 
-        if event.modality.casefold() in {"clipboard", "text"} or event.event_type in {
+        if event.modality.casefold() in {"clipboard", "text", "keyboard"} or event.event_type in {
             "clipboard.changed",
             "key.type",
             "text.input",
@@ -67,7 +67,7 @@ class PrivacyPolicy:
                 drop=False,
                 privacy_tier=PrivacyTier.SENSITIVE,
                 retention_class=RetentionClass.STRUCTURED_SHORT,
-                reason="short_lived_text",
+                reason="short_lived_exact_input",
             )
 
         return PrivacyDecision(

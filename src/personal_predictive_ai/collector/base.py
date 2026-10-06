@@ -4,9 +4,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from personal_predictive_ai.events.ids import EventFactory
 from personal_predictive_ai.events.models import CanonicalEvent
+from personal_predictive_ai.storage.raw_ring import RawRing
 
 PublishCallback = Callable[[CanonicalEvent], object]
+
+
+@dataclass(frozen=True, slots=True)
+class CollectorContext:
+    event_factory: EventFactory
+    raw_ring: RawRing
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +25,7 @@ class CollectorHealth:
     events_published: int = 0
     structural_available: bool = False
     structural_observations: int = 0
+    screen_observations: int = 0
 
 
 class Collector(Protocol):

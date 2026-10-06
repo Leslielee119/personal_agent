@@ -62,3 +62,52 @@ def test_capture_duration_starts_and_stops_offline_runtime(tmp_path: Path, capsy
     assert payload["running"] is False
     assert payload["offline_mode"] is True
     assert payload["provider_errors"] == {}
+
+
+def test_capture_stop_file_requests_clean_shutdown(tmp_path: Path, capsys) -> None:
+    stop_file = tmp_path / "stop.requested"
+    stop_file.write_text("stop\n", encoding="utf-8")
+
+    code = main(
+        [
+            "--data-dir",
+            str(tmp_path),
+            "capture",
+            "--stop-file",
+            str(stop_file),
+            "--no-openadapt",
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["running"] is False
+    assert payload["offline_mode"] is True
+
+
+def test_capture_runs_structured_short_gc_on_shutdown(tmp_path: Path, capsys, monkeypatch) -> None:
+    from personal_predictive_ai.runtime.service import CaptureService
+
+    calls = {"structured": 0}
+    original = CaptureService.expire_structured_short
+
+    def wrapped(self, *, now_ns=None):
+        calls["structured"] += 1
+        return original(self, now_ns=now_ns)
+
+    monkeypatch.setattr(CaptureService, "expire_structured_short", wrapped)
+
+    code = main(
+        [
+            "--data-dir",
+            str(tmp_path),
+            "capture",
+            "--duration",
+            "0.05",
+            "--no-openadapt",
+        ]
+    )
+
+    assert code == 0
+    assert calls["structured"] >= 1
+    json.loads(capsys.readouterr().out)

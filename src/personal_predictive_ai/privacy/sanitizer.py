@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Any
 
@@ -23,7 +23,22 @@ _SENSITIVE_KEYS = {
     "credentials",
     "authorization",
 }
-_SECURE_VALUE_KEYS = {"value", "text", "content", "input", "input_value"}
+_KEY_CONTENT_KEYS = {
+    "text",
+    "key_name",
+    "key_char",
+    "key_vk",
+    "canonical_key_name",
+    "canonical_key_char",
+    "canonical_key_vk",
+}
+_SECURE_VALUE_KEYS = {
+    "value",
+    "content",
+    "input",
+    "input_value",
+    *_KEY_CONTENT_KEYS,
+}
 _SECURE_MARKER_KEYS = {"is_password", "is_secure", "secure", "protected"}
 _SECURE_ROLE_KEYS = {"role", "control_type", "type", "name", "automation_id"}
 
@@ -40,9 +55,19 @@ def _dict_is_secure(value: dict[str, Any]) -> bool:
     return False
 
 
+def _contains_secure_marker(value: Any) -> bool:
+    if isinstance(value, dict):
+        if _dict_is_secure(value):
+            return True
+        return any(_contains_secure_marker(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_secure_marker(item) for item in value)
+    return False
+
+
 def _sanitize_value(value: Any, *, secure_context: bool = False) -> tuple[Any, bool]:
     if isinstance(value, dict):
-        current_secure = secure_context or _dict_is_secure(value)
+        current_secure = secure_context or _contains_secure_marker(value)
         sanitized: dict[str, Any] = {}
         found_secret = False
         for key, item in value.items():
@@ -79,6 +104,51 @@ def _sanitize_value(value: Any, *, secure_context: bool = False) -> tuple[Any, b
     return value, False
 
 
+def _redact_named_keys(value: Any, keys: set[str]) -> tuple[Any, bool]:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        found = False
+        for key, item in value.items():
+            if key.casefold() in keys:
+                redacted[key] = _REDACTED
+                found = True
+                continue
+            cleaned, child_found = _redact_named_keys(item, keys)
+            redacted[key] = cleaned
+            found = found or child_found
+        return redacted, found
+    if isinstance(value, list):
+        items = []
+        found = False
+        for item in value:
+            cleaned, child_found = _redact_named_keys(item, keys)
+            items.append(cleaned)
+            found = found or child_found
+        return items, found
+    if isinstance(value, tuple):
+        items = []
+        found = False
+        for item in value:
+            cleaned, child_found = _redact_named_keys(item, keys)
+            items.append(cleaned)
+            found = found or child_found
+        return items, found
+    return value, False
+
+
+def _keyboard_content_must_be_redacted(event: CanonicalEvent) -> bool:
+    if event.modality.casefold() != "keyboard":
+        return False
+    if event.event_type == "key.up":
+        return True
+    if event.event_type not in {"key.down", "key.type", "text.input"}:
+        return False
+    structural = event.payload.get("structural")
+    if not isinstance(structural, dict):
+        return True
+    return _contains_secure_marker(structural)
+
+
 def sanitize_event(
     event: CanonicalEvent,
     policy: PrivacyPolicy,
@@ -88,6 +158,10 @@ def sanitize_event(
         return None
 
     payload, payload_secret = _sanitize_value(event.payload)
+    if _keyboard_content_must_be_redacted(event):
+        payload, keyboard_secret = _redact_named_keys(payload, _KEY_CONTENT_KEYS)
+        payload_secret = payload_secret or keyboard_secret
+
     app, app_secret = _sanitize_value(event.app) if event.app is not None else (None, False)
     process, process_secret = (
         _sanitize_value(event.process) if event.process is not None else (None, False)
@@ -123,4 +197,3 @@ def sanitize_event(
             "retention_class": retention_class,
         }
     )
-
