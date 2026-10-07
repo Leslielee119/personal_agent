@@ -12,7 +12,9 @@ Open gates:
 1. physical mouse input has not yet been observed in a native qualification run;
 2. the required real 8-hour soak has not yet been run.
 
-Milestone B must not start until both are closed.
+Historical gate at the start of qualification: Milestone B was originally blocked until both were closed.
+
+Execution ruling (2026-10-07): the user explicitly approved B1 implementation proceeding in parallel with the remaining physical-mouse and 8-hour-soak qualification work after the native mouse hook and injected-input rejection path were independently validated. These two gates remain mandatory before Milestone A may be called **fully qualified**, but they no longer block B1/B2 design work.
 
 ## Frozen acceptance gates
 
@@ -170,6 +172,6 @@ The 5-minute pre-soak is not a substitute for this gate.
 
 ## Decision
 
-Current decision: **DO NOT START MILESTONE B YET**.
+Current decision: **Milestone A remains qualification-pending, while higher-level design/B1 implementation may proceed in parallel by explicit user ruling.**
 
-The capture/data-plane implementation is functionally complete and the measured short qualification is healthy, but Milestone A remains open until physical mouse evidence and the required 8-hour soak are both recorded.
+The capture/data-plane implementation is functionally complete and the measured short qualification is healthy. B1 has since been implemented and merged, but this does not retroactively close Milestone A: physical mouse evidence and the required 8-hour soak must still be recorded before Milestone A is declared fully qualified.
