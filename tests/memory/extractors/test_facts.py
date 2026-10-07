@@ -75,6 +75,7 @@ def test_extracts_foreground_application_candidates_with_counts_and_sessions() -
     assert code.contradiction_count == 2
     assert code.session_ids == ["s1", "s2"]
     assert code.evidence_ids == ["e1", "e3", "e4"]
+    assert code.contradiction_evidence_ids == ["e2", "e5"]
     assert code.provenance_summary.system_support == 3
     assert code.created_seq == 1
     assert code.last_supported_seq == 4

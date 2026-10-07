@@ -87,6 +87,11 @@ def extract_next_operation_habits(
                 for _, current, target in supporting
                 for evidence_id in (current.source_event_id, target.source_event_id)
             )
+            contradiction_evidence_ids = _unique(
+                evidence_id
+                for _, current, target in eligible_contradictions
+                for evidence_id in (current.source_event_id, target.source_event_id)
+            )
             scope = (
                 MemoryScope(scope_type="application", scope_id=application)
                 if application != "*"
@@ -105,6 +110,7 @@ def extract_next_operation_habits(
                 created_seq=first.monotonic_seq,
                 last_supported_seq=supporting[-1][2].monotonic_seq,
                 evidence_ids=evidence_ids,
+                contradiction_evidence_ids=contradiction_evidence_ids,
                 provenance_summary=summarize_provenance(
                     target.provenance for _, _, target in supporting
                 ),

@@ -78,6 +78,9 @@ def extract_foreground_application_facts(
             created_seq=first.monotonic_seq,
             last_supported_seq=supporting[-1].monotonic_seq,
             evidence_ids=[event.event_id for event in supporting],
+            contradiction_evidence_ids=[
+                event.event_id for event in eligible if event not in supporting
+            ],
             provenance_summary=summarize_provenance(event.provenance for event in supporting),
             support_count=support_count,
             contradiction_count=contradiction_count,

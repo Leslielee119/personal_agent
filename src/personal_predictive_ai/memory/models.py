@@ -66,6 +66,7 @@ class _MemoryClaimBase(BaseModel):
     created_seq: int = Field(ge=1)
     last_supported_seq: int = Field(ge=1)
     evidence_ids: list[str] = Field(default_factory=list)
+    contradiction_evidence_ids: list[str] = Field(default_factory=list)
     provenance_summary: ProvenanceSummary = Field(default_factory=ProvenanceSummary)
     support_count: int = Field(default=0, ge=0)
     contradiction_count: int = Field(default=0, ge=0)
@@ -122,6 +123,7 @@ class MemoryDependency(BaseModel):
     child_memory_id: str = Field(min_length=1)
     relation: DependencyRelation
     evidence_ids: list[str] = Field(default_factory=list)
+    contradiction_evidence_ids: list[str] = Field(default_factory=list)
     created_seq: int = Field(ge=1)
     active: bool = True
 

@@ -77,6 +77,7 @@ def test_extracts_repeated_bigrams_with_competing_next_operation() -> None:
     assert run_tests.provenance_summary.human_physical_support == 2
     assert run_tests.eligible_support_count == 2
     assert run_tests.eligible_human_support_count == 2
+    assert run_tests.contradiction_evidence_ids == ["evt-a5", "evt-a6"]
     assert by_value["open_browser"].support_count == 1
     assert by_value["open_browser"].contradiction_count == 2
 
