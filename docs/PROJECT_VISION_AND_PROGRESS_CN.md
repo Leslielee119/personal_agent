@@ -603,30 +603,77 @@ B2 已实现 Memory schema/ID、transactional storage、provenance eligibility�
 
 ## 17. 2026-10-07：Milestone C Predictive Benchmark
 
-B2 后进入下一动作预测阶段，但不会直接训练 GRU/Transformer。
+Milestone C V1 已完成 Native TDD 实现与真实数据 qualification。它的定位不是“训练一个模型得到高 accuracy”，而是先建立一个 **Validity-first Predictive Benchmark**：只有数据本身足以支持可信的 out-of-time 比较时，才允许讨论模型增益。
 
-相关工作调研：
+相关文档：
 
-`docs/research/2026-10-07-predictive-action-research-scan.md`
+- `docs/research/2026-10-07-predictive-action-research-scan.md`
+- `docs/superpowers/specs/2026-10-07-predictive-baselines-design.md`
+- `docs/superpowers/plans/2026-10-07-milestone-c-validity-first-predictive-benchmark.md`
+- `docs/milestones/MILESTONE_C_ACCEPTANCE.md`
 
-正式设计：
-
-`docs/superpowers/specs/2026-10-07-predictive-baselines-design.md`
-
-Milestone C 采用：
+正式实现路线为：
 
 ```text
 C0 Validity Audit
-  -> C1 Frequency / Markov strong baselines
+  -> C1 Frequency / Persistence / Markov strong baselines
   -> C2 Structured Retrieval
-  -> C3 B2 Memory Ablation
+  -> C3 prefix-safe B2 Memory Ablation
 ```
 
-C0 会首先检查 target diversity、dominant-class ratio、entropy、prefix leakage、unseen-prefix rate、conditional ambiguity 和 empirical accuracy ceiling。数据不合格时明确输出 `INSUFFICIENT_PREDICTIVE_DIVERSITY`，禁止用高 majority accuracy 冒充预测成功。
+当前已经实现：
 
-模型评估使用 chronological/session-forward split，不使用随机 action-row split。主要目标分层为 Application、Operation 和 Joint(Application, Operation)，主要指标包括 Top-1、HitRate@3、MRR、NLL、Macro-F1，并重点比较 `Delta_context`、`Delta_state`、`Delta_memory`。
+- HUMAN_PHYSICAL-only formal targets；
+- Application / Operation / Joint 三层 target；
+- `source_seq < target_seq` 的严格 pre-target 输入边界；
+- chronological/session-forward rolling split；
+- target diversity、dominant ratio、entropy、prefix leakage、conditional ambiguity 与 empirical ceiling audit；
+- training-only vocabulary + `__UNSEEN__` probability contract；
+- Global Frequency、Persistence、Contextual Frequency、Bigram、Trigram-backoff；
+- transition-only persistence diagnostic；
+- interpretable Structured Retrieval；
+- per-fold prefix-safe B2 reconstruction 与 Memory exposure gate；
+- NLL-only primary Gate，secondary metrics 不得救回失败的主 Gate；
+- deterministic prediction artifacts 与 `ppa benchmark-c` CLI。
 
-只有当 C0 通过、action-only baseline 显示稳定 out-of-time sequence signal 后，才进入 learned GRU/SSM。
+最新自动验证：
+
+```text
+Milestone C focused suite: 39 passed
+full pytest: 215 passed
+ruff: PASS
+git diff --check: PASS
+```
+
+真实 qualification 使用冻结数据库：
+
+`E:\Experiment\personal-predictive-ai-runtime\captures\2026-10-07-b2-qualification\events.db`
+
+其中 B1=`real-b1-20261007`、B2=`real-b2-20261007`，high-water 均为 391。C 对 Application / Operation / Joint 都得到 182 个 HUMAN_PHYSICAL examples，但只有 **1 个 session、1 个 class、dominant ratio=1.0、normalized entropy=0.0**，因此三个 target space 均按预注册 Gate 返回：
+
+```text
+INSUFFICIENT_PREDICTIVE_DIVERSITY
+```
+
+并标记：
+
+```text
+NON_GENERALIZATION_DIAGNOSTIC
+```
+
+所以 C1/C2/C3 formal comparison 被正确阻断。这个结果不是“预测方法失败”，而是当前真实数据不足以识别 sequence/state/Memory 的增量价值。不能从这批数据得出 `NO_STABLE_SEQUENCE_SIGNAL`、`NO_NONREDUNDANT_STATE_GAIN` 或 `NO_NONREDUNDANT_MEMORY_GAIN`。
+
+真实 benchmark 重跑的 6 个工件字节哈希完全一致；capture DB 文件以及 canonical/B1/B2 source tables 的前后哈希均不变；prediction artifact 隐私扫描没有发现 exact-key/window-title/screenshot/clipboard/credential/password 字段。
+
+因此当前 Milestone C 状态冻结为：
+
+```text
+benchmark implementation: QUALIFIED
+real predictive comparison: BLOCKED BY C0 DATA VALIDITY
+learned policy / Milestone D: NOT YET ELIGIBLE
+```
+
+下一步不是立刻上 GRU/SSM，而是积累真正跨 session、跨应用、跨 operation 的 HUMAN_PHYSICAL 数据，使 C0 首先具备可检验性。只有 C0 PASS 且 Gate 1 出现稳定 out-of-time sequence signal 后，才进入 learned personal policy。
 
 ## 18. 当前仍开放的基础资格项
 
