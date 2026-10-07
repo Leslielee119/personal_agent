@@ -13,7 +13,13 @@ from personal_predictive_ai.collector.base import (
 from personal_predictive_ai.config import Settings
 from personal_predictive_ai.events.bus import EventBus, PublishResult
 from personal_predictive_ai.events.ids import EventFactory
-from personal_predictive_ai.events.models import CanonicalEvent
+from personal_predictive_ai.events.models import (
+    CanonicalEvent,
+    EventActor,
+    EventOrigin,
+    EventProvenance,
+    RetentionClass,
+)
 from personal_predictive_ai.privacy.policy import PrivacyPolicy
 from personal_predictive_ai.privacy.sanitizer import sanitize_event
 from personal_predictive_ai.runtime.offline_guard import OfflineNetworkGuard
@@ -76,6 +82,25 @@ class CaptureService:
             return
         if self._offline_guard is not None:
             self._offline_guard.install()
+
+        boundary = self.event_factory.next(
+            timestamp_ns=time.time_ns(),
+            source="runtime.service",
+            modality="runtime",
+            origin=EventOrigin.EXOGENOUS,
+            event_type="runtime.restart",
+            actor=EventActor.SYSTEM,
+            provenance=EventProvenance.SYSTEM,
+            retention_class=RetentionClass.STRUCTURED_LONG,
+        )
+        boundary_result = self.publish(boundary)
+        if not boundary_result.accepted:
+            if self._offline_guard is not None:
+                self._offline_guard.remove()
+            raise RuntimeError(
+                "failed to persist runtime.restart boundary: "
+                f"{boundary_result.rejected_reason or 'unknown'}"
+            )
 
         self._provider_errors = {}
         self._started_collectors = []

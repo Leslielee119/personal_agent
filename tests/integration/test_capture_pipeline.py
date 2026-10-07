@@ -84,11 +84,15 @@ def test_end_to_end_pipeline_is_ordered_private_and_fault_isolated(tmp_path: Pat
     service.expire_raw(now_ns=created_ns + 2_000_000_000)
     events = list(service.event_store.iter_events())
     serialized = json.dumps([event.model_dump(mode="json") for event in events])
+    restart_events = [event for event in events if event.event_type == "runtime.restart"]
+    business_events = [event for event in events if event.event_type != "runtime.restart"]
 
     assert status.running is True
     assert "broken" in status.provider_errors
-    assert [event.timestamp_ns for event in events] == [100, 200, 200]
-    assert [event.monotonic_seq for event in events] == [3, 1, 2]
+    assert len(restart_events) == 1
+    assert restart_events[0].payload == {}
+    assert [event.timestamp_ns for event in business_events] == [100, 200, 200]
+    assert [event.monotonic_seq for event in business_events] == [3, 1, 2]
     assert "pipeline-secret" not in serialized
     assert "PasswordBox" in serialized
     assert service.raw_ring.resolve(raw_ref) is None

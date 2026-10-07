@@ -60,7 +60,7 @@ def test_service_starts_stops_and_persists_collector_events(tmp_path: Path) -> N
     status = service.status()
 
     assert status.running is True
-    assert status.event_count == 1
+    assert status.event_count == 2
     assert service.event_store.get(event.event_id) == event
     service.stop()
     assert collector.stop_calls == 1
@@ -89,7 +89,7 @@ def test_provider_start_failure_is_isolated_from_healthy_provider(tmp_path: Path
 
     assert status.running is True
     assert "broken" in status.provider_errors
-    assert status.event_count == 1
+    assert status.event_count == 2
     assert healthy.running is True
     service.stop()
     assert broken.stop_calls == 0
@@ -129,35 +129,42 @@ def test_service_expires_raw_artifacts_without_invalidating_structured_rows(
 def test_shared_factory_produces_deterministic_unique_sequences_across_collectors(
     tmp_path: Path,
 ) -> None:
-    factory = EventFactory()
-    first = factory.next(
-        timestamp_ns=100,
-        source="first",
-        modality="system",
-        origin=EventOrigin.EXOGENOUS,
-        event_type="system.first",
-    )
-    second = factory.next(
-        timestamp_ns=100,
-        source="second",
-        modality="system",
-        origin=EventOrigin.EXOGENOUS,
-        event_type="system.second",
-    )
-    service = CaptureService(
-        settings=_settings(tmp_path),
-        collectors=[
+    def collector_factory(context):
+        first = context.event_factory.next(
+            timestamp_ns=100,
+            source="first",
+            modality="system",
+            origin=EventOrigin.EXOGENOUS,
+            event_type="system.first",
+        )
+        second = context.event_factory.next(
+            timestamp_ns=100,
+            source="second",
+            modality="system",
+            origin=EventOrigin.EXOGENOUS,
+            event_type="system.second",
+        )
+        return [
             FakeCollector(name="first", event=first),
             FakeCollector(name="second", event=second),
-        ],
-        event_factory=factory,
+        ]
+
+    service = CaptureService(
+        settings=_settings(tmp_path),
+        collectors=[],
+        event_factory=EventFactory(),
+        collector_factory=collector_factory,
     )
 
     service.start()
-    stored = list(service.event_store.iter_events())
+    stored = list(service.event_store.iter_events_by_sequence())
 
-    assert [event.monotonic_seq for event in stored] == [1, 2]
-    assert [event.event_type for event in stored] == ["system.first", "system.second"]
+    assert [event.monotonic_seq for event in stored] == [1, 2, 3]
+    assert [event.event_type for event in stored] == [
+        "runtime.restart",
+        "system.first",
+        "system.second",
+    ]
     service.stop()
 
 
@@ -285,6 +292,46 @@ def test_service_restart_continues_persisted_monotonic_sequence(tmp_path: Path) 
     second.start()
     stored = list(second.event_store.iter_events())
 
-    assert [event.monotonic_seq for event in stored] == [1, 2]
+    assert [event.monotonic_seq for event in stored] == [1, 2, 3, 4]
+    assert [event.event_type for event in stored] == [
+        "runtime.restart",
+        "system.restart-fixture",
+        "runtime.restart",
+        "system.restart-fixture",
+    ]
     second.stop()
     second.close()
+
+
+def test_service_start_persists_safe_runtime_restart_boundary(tmp_path: Path) -> None:
+    from personal_predictive_ai.events.models import (
+        EventActor,
+        EventProvenance,
+        RetentionClass,
+    )
+
+    service = CaptureService(
+        settings=_settings(tmp_path),
+        collectors=[],
+        event_factory=EventFactory(),
+    )
+    service.start()
+    try:
+        stored = list(service.event_store.iter_events_by_sequence())
+        assert len(stored) == 1
+        boundary = stored[0]
+        assert boundary.event_type == "runtime.restart"
+        assert boundary.source == "runtime.service"
+        assert boundary.modality == "runtime"
+        assert boundary.origin is EventOrigin.EXOGENOUS
+        assert boundary.actor is EventActor.SYSTEM
+        assert boundary.provenance is EventProvenance.SYSTEM
+        assert boundary.retention_class is RetentionClass.STRUCTURED_LONG
+        assert boundary.payload == {}
+        assert boundary.device is None
+        assert boundary.app is None
+        assert boundary.process is None
+        assert boundary.window is None
+        assert boundary.raw_ref is None
+    finally:
+        service.close()
