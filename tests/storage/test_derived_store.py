@@ -141,3 +141,33 @@ def test_derived_reconstruction_never_mutates_canonical_evidence(tmp_path: Path)
     assert derived.get_run("run-1") is None
     derived.close()
     canonical.close()
+
+
+def test_sessions_preserve_source_insertion_order_when_wall_clock_regresses(
+    tmp_path: Path,
+) -> None:
+    store = DerivedStore(tmp_path / "events.db")
+    first = SessionSegment(
+        session_id="session-first",
+        start_event_id="evt-1",
+        start_ns=200,
+        end_event_id="evt-1",
+        end_ns=200,
+        reason="runtime_restart",
+    )
+    second = SessionSegment(
+        session_id="session-second",
+        start_event_id="evt-2",
+        start_ns=100,
+        end_event_id="evt-2",
+        end_ns=100,
+        reason="end_of_stream",
+    )
+
+    store.replace_run("run-clock", 2, [], [], [first, second], [])
+
+    assert [session.session_id for session in store.iter_sessions("run-clock")] == [
+        "session-first",
+        "session-second",
+    ]
+    store.close()

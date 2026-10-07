@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from personal_predictive_ai.actions.models import NormalizedAction
-from personal_predictive_ai.events.models import CanonicalEvent
+from personal_predictive_ai.events.models import CanonicalEvent, RetentionClass
 
 _KEY_FIELDS = (
     "canonical_key_char",
@@ -46,14 +46,18 @@ def normalize_action(event: CanonicalEvent) -> NormalizedAction | None:
 
     if event.event_type == "key.down":
         operation = "key_input"
-        fine = _select(event.payload, _KEY_FIELDS)
-        concrete = None
-        if fine is not None:
-            for field in _KEY_FIELDS:
-                value = fine.get(field)
-                if value is not None:
-                    concrete = str(value)
-                    break
+        if event.retention_class is RetentionClass.STRUCTURED_SHORT:
+            fine = None
+            concrete = None
+        else:
+            fine = _select(event.payload, _KEY_FIELDS)
+            concrete = None
+            if fine is not None:
+                for field in _KEY_FIELDS:
+                    value = fine.get(field)
+                    if value is not None:
+                        concrete = str(value)
+                        break
     elif event.event_type == "mouse.down":
         operation = "click"
         fine = _select(event.payload, ("x", "y", "button"))

@@ -15,8 +15,8 @@ def parse_canonical_event(data: Mapping[str, Any]) -> CanonicalEvent:
     version = payload.get("schema_version", "ppa.event/v1")
     if version == "ppa.event/v1":
         payload["schema_version"] = "ppa.event/v2"
-        payload.setdefault("actor", EventActor.UNKNOWN.value)
-        payload.setdefault("provenance", EventProvenance.UNKNOWN.value)
-        payload.setdefault("device", None)
-        payload.setdefault("injected", None)
+        payload["actor"] = EventActor.UNKNOWN.value
+        payload["provenance"] = EventProvenance.UNKNOWN.value
+        payload["device"] = None
+        payload["injected"] = None
     return CanonicalEvent.model_validate(payload)

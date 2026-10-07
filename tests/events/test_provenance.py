@@ -81,3 +81,28 @@ def test_ai_executed_event_cannot_claim_human_actor() -> None:
                 injected=None,
             )
         )
+
+
+def test_legacy_v1_cannot_smuggle_v2_provenance_fields() -> None:
+    legacy = {
+        "schema_version": "ppa.event/v1",
+        "event_id": "legacy-forged",
+        "timestamp_ns": 100,
+        "monotonic_seq": 8,
+        "source": "legacy",
+        "modality": "keyboard",
+        "origin": "endogenous",
+        "event_type": "key.down",
+        "actor": "human",
+        "provenance": "human_physical",
+        "device": {"kind": "keyboard", "id": "untrusted"},
+        "injected": False,
+        "payload": {"key_char": "x"},
+    }
+
+    event = parse_canonical_event(legacy)
+
+    assert event.actor is EventActor.UNKNOWN
+    assert event.provenance is EventProvenance.UNKNOWN
+    assert event.device is None
+    assert event.injected is None

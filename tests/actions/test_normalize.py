@@ -4,6 +4,7 @@ from personal_predictive_ai.events.models import (
     EventActor,
     EventOrigin,
     EventProvenance,
+    RetentionClass,
 )
 
 
@@ -132,3 +133,23 @@ def test_missing_context_and_unknown_provenance_are_preserved_not_fabricated() -
 def test_key_up_is_evidence_but_not_a_separate_normalized_action() -> None:
     event = _event("key.up", modality="keyboard", payload={"canonical_key_char": "a"})
     assert normalize_action(event) is None
+
+
+def test_short_lived_keyboard_content_is_not_copied_into_long_lived_action() -> None:
+    event = _event(
+        "key.down",
+        modality="keyboard",
+        payload={
+            "canonical_key_char": "s",
+            "canonical_key_vk": "83",
+            "key_char": "s",
+            "key_vk": "83",
+        },
+    ).model_copy(update={"retention_class": RetentionClass.STRUCTURED_SHORT})
+
+    action = normalize_action(event)
+
+    assert action is not None
+    assert action.operation == "key_input"
+    assert action.concrete is None
+    assert action.fine is None

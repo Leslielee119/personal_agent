@@ -141,7 +141,7 @@ class DerivedStore:
         yield from self._iter_model("b1_actions", "monotonic_seq", run_id, NormalizedAction)
 
     def iter_sessions(self, run_id: str) -> Iterator[SessionSegment]:
-        yield from self._iter_model("b1_sessions", "start_ns", run_id, SessionSegment)
+        yield from self._iter_model("b1_sessions", "rowid", run_id, SessionSegment)
 
     def iter_transitions(self, run_id: str) -> Iterator[Transition]:
         yield from self._iter_model("b1_transitions", "start_seq", run_id, Transition)
@@ -155,7 +155,7 @@ class DerivedStore:
         allowed = {
             "b1_state_snapshots": "monotonic_seq",
             "b1_actions": "monotonic_seq",
-            "b1_sessions": "start_ns",
+            "b1_sessions": "rowid",
             "b1_transitions": "start_seq",
         }
         if allowed.get(table) != order_by:
