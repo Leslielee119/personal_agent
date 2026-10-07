@@ -40,6 +40,7 @@ class PredictionConfigV1(BaseModel):
     retrieval_weight_suffix: Literal[1.0] = 1.0
     retrieval_weight_idle_bucket: Literal[1.0] = 1.0
     retrieval_weight_time_of_day: Literal[0.0] = 0.0
+    memory_similarity_weight: Literal[1.0] = 1.0
 
     memory_min_available_samples: Literal[40] = 40
     memory_min_coverage: Literal[0.2] = 0.2
