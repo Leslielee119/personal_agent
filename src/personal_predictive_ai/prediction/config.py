@@ -1,0 +1,33 @@
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
+
+
+class PredictionConfigV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["ppa.prediction-config/v1"] = "ppa.prediction-config/v1"
+
+    c0_min_sessions: Literal[4] = 4
+    c0_min_targets: Literal[200] = 200
+    c0_min_classes: Literal[3] = 3
+    c0_max_dominant_ratio: Literal[0.9] = 0.9
+    c0_min_normalized_entropy: Literal[0.25] = 0.25
+    c0_min_test_classes: Literal[2] = 2
+    c0_min_test_samples: Literal[40] = 40
+
+    suffix_ks: Literal[(1, 2, 3, 5)] = (1, 2, 3, 5)
+    unseen_token: Literal["__UNSEEN__"] = "__UNSEEN__"
+    primary_metric: Literal["nll"] = "nll"
+
+    nll_absolute_min_effect: Literal[0.01] = 0.01
+    nll_relative_min_effect: Literal[0.01] = 0.01
+    min_rolling_test_folds: Literal[2] = 2
+    confirmatory_min_independent_test_sessions: Literal[5] = 5
+
+    memory_min_available_samples: Literal[40] = 40
+    memory_min_coverage: Literal[0.2] = 0.2
+    memory_min_exposed_test_sessions: Literal[2] = 2
+    memory_min_distinct_active_memories: Literal[2] = 2
