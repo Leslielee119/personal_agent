@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
+import sqlite3
 from collections import Counter, defaultdict
 from collections.abc import Iterator
 from pathlib import Path
 
-from personal_predictive_ai.diagnostics.state_replay import _source_version_counts
 from personal_predictive_ai.memory.consolidation import consolidate
 from personal_predictive_ai.memory.extractors.facts import extract_foreground_application_facts
 from personal_predictive_ai.memory.extractors.habits import extract_next_operation_habits
@@ -24,6 +25,26 @@ from personal_predictive_ai.storage.memory_store import MemoryRunMetadata, Memor
 from personal_predictive_ai.storage.sqlite_store import EventStore
 
 _EXTRACTOR_VERSION = "b2-deterministic/v1"
+
+
+def _source_version_counts_bounded(db_path: Path, source_high_water: int) -> tuple[int, int]:
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT data_json FROM canonical_events WHERE monotonic_seq <= ?",
+            (source_high_water,),
+        ).fetchall()
+    finally:
+        conn.close()
+    v1 = 0
+    v2 = 0
+    for (encoded,) in rows:
+        data = json.loads(encoded)
+        if data.get("schema_version", "ppa.event/v1") == "ppa.event/v1":
+            v1 += 1
+        else:
+            v2 += 1
+    return v1, v2
 
 
 def _apply_fact_supersession(
@@ -102,7 +123,11 @@ def derive_b2(
         if b1_run is None:
             raise ValueError(f"B1 run not found: {source_b1_run_id}")
 
-        events = list(event_store.iter_events_by_sequence())
+        events = [
+            event
+            for event in event_store.iter_events_by_sequence()
+            if event.monotonic_seq <= b1_run.source_high_water
+        ]
         snapshots = list(derived_store.iter_snapshots(source_b1_run_id))
         actions = list(derived_store.iter_actions(source_b1_run_id))
         sessions = list(derived_store.iter_sessions(source_b1_run_id))
@@ -165,7 +190,7 @@ def derive_b2(
         )
 
         status_counts = Counter(record.status.value for record in records)
-        v1_count, v2_count = _source_version_counts(path)
+        v1_count, v2_count = _source_version_counts_bounded(path, b1_run.source_high_water)
         return {
             "run_id": run_id,
             "source_b1_run_id": source_b1_run_id,
@@ -190,9 +215,7 @@ def derive_b2(
             "ai_executed_support": sum(
                 record.provenance_summary.ai_executed_support for record in records
             ),
-            "unknown_support": sum(
-                record.provenance_summary.unknown_support for record in records
-            ),
+            "unknown_support": sum(record.provenance_summary.unknown_support for record in records),
             "extractor_version": _EXTRACTOR_VERSION,
             "config_version": cfg.schema_version,
             "integrity": memory_store.integrity_check(),

@@ -76,6 +76,15 @@ def _passes_base_gates(record: MemoryRecord, query: MemoryQuery) -> bool:
     )
 
 
+def _passes_dependency_gates(record: MemoryRecord, query: MemoryQuery) -> bool:
+    return (
+        _scope_rank(record, query) is not None
+        and _in_valid_interval(record, query.as_of_ns)
+        and _status_allowed(record, query)
+        and _provenance_allowed(record, query)
+    )
+
+
 def retrieve_memories(
     records: list[MemoryRecord],
     dependencies: list[MemoryDependency],
@@ -96,7 +105,7 @@ def retrieve_memories(
         next_trail.add(memory_id)
         for parent_id in parents_by_child.get(memory_id, []):
             parent = by_id.get(parent_id)
-            if parent is None or not _passes_base_gates(parent, query):
+            if parent is None or not _passes_dependency_gates(parent, query):
                 return False
             if not dependency_consistent(parent_id, next_trail):
                 return False

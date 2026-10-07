@@ -71,6 +71,12 @@ The one skip remains the existing native physical-input smoke when no physical i
 3. **No dependency edges are invented in V1 reconstruction.** Graph semantics/storage exist, but no deterministic dependency extractor has been approved yet.
 4. **Ambiguous FACT temporal order is not fabricated.** Supersession only closes a valid interval when the newer claim's validity start does not precede the prior claim's validity start.
 
+## Known V1 limitations
+
+- The V1 foreground-application FACT extractor is a full-run frequency aggregate. It does **not** yet infer temporal change points such as ?Chrome was primary, then Firefox became primary.? The supersession state machine and persistence path are implemented and covered by synthetic deterministic tests, but automatic real-world preference migration detection is not yet implemented.
+- The V1 reconstruction creates no Memory dependency edges because no deterministic dependency extractor has been approved. Dependency storage, propagation, cycle handling, and retrieval consistency are implemented for future extractors.
+- B2 therefore establishes temporal/provenance semantics and safe gates; it does not yet prove that every temporal transition can be discovered automatically from user history.
+
 ## Real-session qualification
 
 Status: **PENDING ? NO PRESERVED REAL B1 DATABASE AVAILABLE.**

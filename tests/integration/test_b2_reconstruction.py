@@ -277,3 +277,31 @@ def test_cli_derive_and_replay_b2_are_safe(tmp_path: Path, capsys):
     assert "status=" in replay
     assert SENTINEL not in replay
     assert RAW_SENTINEL not in replay
+
+
+def test_b2_ignores_canonical_events_newer_than_source_b1_high_water(tmp_path: Path):
+    db = _seed(tmp_path)
+    store = EventStore(db)
+    store.append_many(
+        [
+            _event("evt-late-24", 24, app="Chrome.exe"),
+            _event("evt-late-25", 25, app="Chrome.exe"),
+            _event("evt-late-26", 26, app="Chrome.exe"),
+            _event("evt-late-27", 27, app="Chrome.exe"),
+        ]
+    )
+    store.close()
+
+    summary = derive_b2(db, source_b1_run_id="b1-real", run_id="bounded")
+    assert summary["source_high_water"] == 23
+    assert summary["source_event_count"] == 19
+    assert summary["v2_count"] == 19
+
+    memory_store = MemoryStore(db)
+    records = list(memory_store.iter_records("bounded"))
+    memory_store.close()
+    code = next(r for r in records if r.kind.value == "fact" and r.value == "Code.exe")
+    assert code.status.value == "active"
+    assert all(
+        r.value != "Chrome.exe" or r.support_count == 1 for r in records if r.kind.value == "fact"
+    )

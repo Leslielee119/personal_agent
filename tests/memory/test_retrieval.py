@@ -162,3 +162,32 @@ def test_provenance_allowlist_accepts_memory_with_at_least_one_allowed_support_s
     assert [item.memory_id for item in retrieve_memories([mixed], [], external_only_query)] == [
         "mixed"
     ]
+
+
+def test_dependency_parent_kind_does_not_have_to_match_requested_child_kind() -> None:
+    scope = MemoryScope(scope_type="application", scope_id="Code.exe")
+    parent = _record(
+        "parent-fact",
+        scope=scope,
+        kind=MemoryKind.FACT,
+        provenance=ProvenanceSummary(system_support=1),
+    )
+    child = _record(
+        "child-habit",
+        scope=scope,
+        kind=MemoryKind.HABIT,
+        provenance=ProvenanceSummary(human_physical_support=3),
+    )
+    dependency = MemoryDependency(
+        dependency_id="dep-cross-kind",
+        parent_memory_id=parent.memory_id,
+        child_memory_id=child.memory_id,
+        relation=DependencyRelation.DERIVED_FROM,
+        created_seq=5,
+    )
+    query = _query(
+        kinds={MemoryKind.HABIT},
+        allowed_provenance={EventProvenance.HUMAN_PHYSICAL, EventProvenance.SYSTEM},
+    )
+    result = retrieve_memories([parent, child], [dependency], query)
+    assert [item.memory_id for item in result] == ["child-habit"]
