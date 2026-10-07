@@ -13,6 +13,7 @@ from personal_predictive_ai.diagnostics.memory_replay import derive_b2, iter_b2_
 from personal_predictive_ai.diagnostics.state_replay import derive_b1, iter_b1_replay_lines
 from personal_predictive_ai.events.ids import EventFactory
 from personal_predictive_ai.prediction.benchmark import run_milestone_c
+from personal_predictive_ai.prediction.readiness import audit_longitudinal_status
 from personal_predictive_ai.runtime.service import CaptureService, ServiceStatus
 from personal_predictive_ai.storage.derived_store import DerivedStore
 from personal_predictive_ai.storage.memory_store import MemoryStore
@@ -127,6 +128,9 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark_c_parser.add_argument("--source-b2-run-id", default=None)
     benchmark_c_parser.add_argument("--run-id", required=True)
 
+    longitudinal_parser = subparsers.add_parser("longitudinal-status")
+    longitudinal_parser.add_argument("--source-b1-run-id", required=True)
+
     subparsers.add_parser("status")
     expire = subparsers.add_parser("expire-raw")
     expire.add_argument("--now-ns", type=int, default=None)
@@ -179,6 +183,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             output_root=settings.data_dir,
         )
         print(json.dumps(summary.model_dump(mode="json"), sort_keys=True))
+        return 0
+
+    if args.command == "longitudinal-status":
+        report = audit_longitudinal_status(
+            settings.data_dir / "events.db",
+            source_b1_run_id=args.source_b1_run_id,
+        )
+        print(json.dumps(report.model_dump(mode="json"), sort_keys=True))
         return 0
 
     if args.command == "status":
