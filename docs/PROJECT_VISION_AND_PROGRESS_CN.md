@@ -631,16 +631,18 @@ C0 Validity Audit
 - training-only vocabulary + `__UNSEEN__` probability contract；
 - Global Frequency、Persistence、Contextual Frequency、Bigram、Trigram-backoff；
 - transition-only persistence diagnostic；
+- 每个 target space 只在首次 validation 冻结一次 action-only baseline family，后续 rolling test 不重新选型；
 - interpretable Structured Retrieval；
-- per-fold prefix-safe B2 reconstruction 与 Memory exposure gate；
+- per-fold target/application distribution drift、unseen-prefix、retrieval-neighbor similarity 与 B2 ACTIVE Memory change diagnostics；
+- per-fold prefix-safe B2 reconstruction 与先于 Memory scoring 的 Memory exposure gate；
 - NLL-only primary Gate，secondary metrics 不得救回失败的主 Gate；
 - deterministic prediction artifacts 与 `ppa benchmark-c` CLI。
 
 最新自动验证：
 
 ```text
-Milestone C focused suite: 39 passed
-full pytest: 215 passed
+Milestone C focused suite: 43 passed
+full pytest: 218 passed / 1 native physical-input skip
 ruff: PASS
 git diff --check: PASS
 ```

@@ -29,12 +29,14 @@ C now provides:
 - NLL-only primary decision protocol with frozen minimum effect threshold;
 - Global Frequency, Persistence, Contextual Frequency, Bigram and Trigram-backoff baselines;
 - transition-only persistence diagnostic;
+- one validation-selected action-only baseline family frozen across all rolling test folds per target space;
 - interpretable structured retrieval with frozen similarity weights;
+- per-fold target/application distribution drift, unseen-prefix, retrieval-neighbor-similarity and B2 ACTIVE-Memory-change diagnostics;
 - prefix-safe B2 reconstruction per fold;
 - historical/as-of Memory feature gating;
-- explicit Memory exposure eligibility gate;
+- explicit Memory exposure eligibility gate evaluated before any Memory-augmented predictor is scored;
 - Memory-augmented retrieval whose only additional signal is Memory similarity;
-- deterministic JSON/JSONL artifacts;
+- deterministic JSON/JSONL artifacts carrying explicit config/predictor/metric versions;
 - `ppa benchmark-c` CLI path.
 
 ## Frozen V1 validity gates
@@ -85,12 +87,12 @@ Otherwise C3 reports `INSUFFICIENT_MEMORY_EXPOSURE`, not `NO_NONREDUNDANT_MEMORY
 
 Fresh verification before this acceptance update:
 
-- Milestone C focused suite: **39 passed**;
-- complete repository suite: **215 passed**;
+- Milestone C focused suite: **43 passed**;
+- complete repository suite: **218 passed, 1 skipped**;
 - Ruff: **PASS**;
 - `git diff --check`: **PASS**.
 
-The complete suite includes existing B1/B2 reconstruction and storage tests; no B1/B2 regression was observed.
+The complete suite includes existing B1/B2 reconstruction and storage tests; no B1/B2 regression was observed. The one skip is the existing native physical-input smoke when no physical input occurs during its observation window.
 
 ## Real-data qualification
 
@@ -128,12 +130,12 @@ C1/C2/C3 formal comparison was correctly blocked by C0. No predictor PASS, `NO_S
 
 The same real C run was executed twice with identical source/config/run ID. All six artifacts were byte-identical across reruns:
 
-- `ablation.json`: `2672ef08d9a639f0e77cd536d745d7652b0f74e4991ca509f9d86754161f2f0f`;
+- `ablation.json`: `f226621955134169b3955c625652d66d7029273618b1cb3f87153cc51ae5950a`;
 - `baseline_predictions.jsonl`: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`;
-- `dataset_manifest.json`: `c7c35ac560f418b5163807940d1d9b4daeb752b3da4cd4577bfcaee925217c3c`;
+- `dataset_manifest.json`: `dd9f9fc840cce1904dfdf53317f37240ba44b71a6a3915612cb053b0a0aa7b89`;
 - `metrics.json`: `37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570`;
-- `split_manifest.json`: `2e0996ce071c57b13e2179116aa7595db0d2b66b3a0a5321838f7a5a9cb22448`;
-- `validity_audit.json`: `df90eb49d5f8d2de87bd3ad71f664c08443d690cc4bcadaa399b9e4d1d4041d1`.
+- `split_manifest.json`: `951c085a06777b315e95bdf272e183400fc05d2b4caf03016617174d418168a6`;
+- `validity_audit.json`: `b2b262c91f6d8396b7b8a52f3a8ab48284162406512519358e544937afd22567`.
 
 `baseline_predictions.jsonl` is intentionally empty because C0 blocked model comparison.
 
