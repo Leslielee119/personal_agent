@@ -9,10 +9,12 @@ from typing import Sequence
 
 from personal_predictive_ai.collector.base import Collector, CollectorContext
 from personal_predictive_ai.config import Settings
+from personal_predictive_ai.diagnostics.memory_replay import derive_b2, iter_b2_replay_lines
 from personal_predictive_ai.diagnostics.state_replay import derive_b1, iter_b1_replay_lines
 from personal_predictive_ai.events.ids import EventFactory
 from personal_predictive_ai.runtime.service import CaptureService, ServiceStatus
 from personal_predictive_ai.storage.derived_store import DerivedStore
+from personal_predictive_ai.storage.memory_store import MemoryStore
 
 
 def _settings_from_args(args: argparse.Namespace) -> Settings:
@@ -112,6 +114,13 @@ def build_parser() -> argparse.ArgumentParser:
     replay.add_argument("--run-id", required=True)
     replay.add_argument("--limit", type=int, default=None)
 
+    derive_b2_parser = subparsers.add_parser("derive-b2")
+    derive_b2_parser.add_argument("--source-b1-run-id", required=True)
+    derive_b2_parser.add_argument("--run-id", required=True)
+    replay_b2_parser = subparsers.add_parser("replay-b2")
+    replay_b2_parser.add_argument("--run-id", required=True)
+    replay_b2_parser.add_argument("--limit", type=int, default=None)
+
     subparsers.add_parser("status")
     expire = subparsers.add_parser("expire-raw")
     expire.add_argument("--now-ns", type=int, default=None)
@@ -132,6 +141,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         store = DerivedStore(settings.data_dir / "events.db")
         try:
             for line in iter_b1_replay_lines(store, args.run_id, limit=args.limit):
+                print(line)
+        finally:
+            store.close()
+        return 0
+
+    if args.command == "derive-b2":
+        summary = derive_b2(
+            settings.data_dir / "events.db",
+            source_b1_run_id=args.source_b1_run_id,
+            run_id=args.run_id,
+        )
+        print(json.dumps(summary, sort_keys=True))
+        return 0
+
+    if args.command == "replay-b2":
+        store = MemoryStore(settings.data_dir / "events.db")
+        try:
+            for line in iter_b2_replay_lines(store, args.run_id, limit=args.limit):
                 print(line)
         finally:
             store.close()
