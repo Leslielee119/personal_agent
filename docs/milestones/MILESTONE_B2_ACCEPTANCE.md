@@ -6,9 +6,9 @@ Scope: deterministic long-term temporal Memory over B1 evidence. No vector DB, e
 
 ## Overall status
 
-**IMPLEMENTATION COMPLETE / REAL-SESSION QUALIFICATION PENDING.**
+**QUALIFIED FOR B2 V1 SEMANTICS ? REAL-SESSION RECONSTRUCTION PASS; LONGITUDINAL UTILITY NOT YET ESTABLISHED.**
 
-The B2 semantic/storage/reconstruction stack is implemented and passes automated deterministic/privacy qualification. The final real-user-session gate is still open because no preserved real B1-derived `events.db` exists outside deleted/temporary worktrees on this machine. Test fixture databases are explicitly not accepted as substitutes for this gate.
+The B2 semantic/storage/reconstruction stack passes both automated deterministic/privacy qualification and a new persistent real-session reconstruction. The real session produced only one B1 session, so the frozen multi-session gates correctly left all Memory records as CANDIDATE. This qualifies the B2 V1 semantics and conservative gating behavior; it does not establish long-horizon personalization quality.
 
 ## Implemented capabilities
 
@@ -51,7 +51,7 @@ HABIT becomes ACTIVE only when all hold:
 
 Latest Task 10 full-suite evidence before this document update:
 
-- pytest: **171 passed, 1 skipped**;
+- pytest after final review fixes: **173 passed, 1 skipped**;
 - Ruff: PASS;
 - `git diff --check`: PASS;
 - B2 reconstruction integration: PASS;
@@ -79,27 +79,68 @@ The one skip remains the existing native physical-input smoke when no physical i
 
 ## Real-session qualification
 
-Status: **PENDING ? NO PRESERVED REAL B1 DATABASE AVAILABLE.**
+Status: **PASS for reconstruction/provenance/privacy semantics.**
 
-A search under `E:\Experiment` excluding `.pytest-tmp` and `.worktrees` found no real `events.db`. The earlier five-minute pre-soak database was stored under the old Milestone A worktree and was removed when that worktree was cleaned after merge. Only pytest fixture databases remain.
+A fresh real local capture was written outside Git worktrees to the persistent path:
 
-Therefore this milestone does **not** claim that the frozen FACT/HABIT gates already produce useful ACTIVE memories on actual longitudinal user behavior. That question remains empirical.
+`E:\Experiment\personal-predictive-ai-runtime\captures\2026-10-07-b2-qualification\events.db`
 
-To close the gate, collect/preserve a real B1 database in a persistent path outside Git worktrees, for example:
+The capture was bounded to 60 seconds and processed fully offline by the project runtime. Measured canonical evidence:
 
-`E:\Experiment\personal-predictive-ai-runtime\captures\<date>\events.db`
+- canonical events: **391**;
+- schema: **391 v2 / 0 v1**;
+- provenance: **364 HUMAN_PHYSICAL / 27 SYSTEM / 0 UNKNOWN**;
+- modalities: **364 keyboard / 16 process / 10 screen / 1 window / 0 mouse**;
+- structured-short events: **374**;
+- SQLite integrity: **ok**.
 
-Then, on a copy of that database:
+B1 reconstruction on this real database (`real-b1-20261007`) produced:
 
-1. ensure a B1 derived run exists;
-2. run `ppa derive-b2 --source-b1-run-id <id> --run-id <id>`;
-3. audit at least five representative Memory records/candidates where available;
-4. trace their support/contradiction evidence IDs and provenance summaries;
-5. verify no AI_EXECUTED/UNKNOWN support is mislabeled as natural user support;
-6. verify no short-lived exact input appears in B2 tables;
-7. record whether frozen gates yield ACTIVE FACT/HABIT records without changing thresholds.
+- snapshots: **391**;
+- actions: **182**;
+- transitions: **182**;
+- sessions: **1**;
+- unknown provenance: **0**.
 
-Insufficient real session diversity is an acceptable qualification result; it is not a reason to weaken the gates.
+B2 reconstruction (`real-b2-20261007`) produced:
+
+- FACT candidates: **1**, ACTIVE: **0**;
+- HABIT candidates: **1**, ACTIVE: **0**;
+- status counts: **2 CANDIDATE**;
+- dependencies: **0**;
+- supersessions: **0**;
+- audit events: **4**;
+- AI_EXECUTED support: **0**;
+- UNKNOWN support: **0**;
+- SQLite integrity: **ok**.
+
+The available real Memory candidates were audited:
+
+1. `foreground_application.primary = chrome.exe`
+   - support: **1** SYSTEM foreground event;
+   - sessions: **1**;
+   - remained CANDIDATE because `fact_min_support` and `fact_min_sessions` failed.
+2. `habit.next_operation:chrome.exe:key_input -> key_input`
+   - eligible HUMAN_PHYSICAL support: **181**;
+   - contradiction count: **0**;
+   - sessions: **1**;
+   - remained CANDIDATE solely because `habit_min_sessions` failed.
+
+This second result is an important positive control for the frozen gate: even 181 repeated actions do not become a long-term habit when they come from only one session. Thresholds were not changed. It also exposes a modeling boundary: B1's current keyboard action normalization is coarse, so the real candidate is the low-level pattern `key_input -> key_input`, not yet a semantically rich workflow habit.
+
+Privacy checks on the real B2 tables showed:
+
+- no `canonical_key_char` field in persisted B2 JSON;
+- no `raw_ref` / `raw/` path in persisted B2 JSON;
+- replay contains only Memory IDs, structured keys/status/counts/provenance and reason codes;
+- exact short-lived keyboard content was not promoted into Memory value.
+
+Repeated reconstruction of the same real B2 run produced identical hashes:
+
+- source canonical+B1 SHA-256 before/after: `82b4eed9936f108722e08f1cdf2e6132ea1b85a03f2288cfab654fb4fb6f6623`;
+- B2 derived SHA-256 before/after: `0023e5c1b63c06c1e4a01f918b4b721489c13b420f36238959eec1f7a88dd1fc`.
+
+Therefore real-session reconstruction is deterministic and source-immutable. The lack of ACTIVE Memory is an expected data-diversity result, not a qualification failure.
 
 ## Relationship to Milestone A
 
@@ -107,4 +148,4 @@ Milestone A still has its independent physical-mouse and formal 8-hour-soak qual
 
 ## Decision
 
-B2 code is suitable for whole-branch review as an **implementation-complete, qualification-pending** feature. Milestone C policy experiments should not treat B2 real-world usefulness as established until the real-session gate above is closed.
+B2 V1 is **qualified for deterministic temporal/provenance Memory semantics and real-session reconstruction**. Milestone C may begin simple policy baselines, but must not claim that useful long-horizon personalization is established: this real capture contained only one session and produced no ACTIVE memories under the frozen gates.
