@@ -574,3 +574,34 @@ Local Event-Sourced Personal Computing Model
 一句话概括：
 
 > **我们不是在让 AI 记住用户说过什么，而是在构造一个能够长期学习“这个用户如何与自己的电脑和任务世界交互”的本地预测系统。**
+
+## 16. 2026-10-07：B2 Temporal Memory 设计状态
+
+B1 已经完成并合并到 `main`，当前进入 B2 设计阶段。
+
+B2 不把长期记忆实现成 `text + embedding`，而是定义为：
+
+```text
+Memory = Value + Time + Evidence + Provenance + Dependency + Supersession + Validity
+```
+
+正式设计文档：
+
+`docs/superpowers/specs/2026-10-07-temporal-memory-provenance-design.md`
+
+B2 当前状态：**设计已冻结，产品实现尚未开始。**
+
+核心目标包括：
+
+- 从 B1 transition/evidence 中构造可追溯长期 Memory；
+- 区分 FACT / HABIT / PROCEDURE / STYLE；
+- 支持 `valid_from / valid_to` 与历史 `as_of` 查询；
+- 每条 Memory 保留 evidence IDs 和 provenance summary；
+- 支持 dependency graph，但不把它宣称为真实因果图；
+- 支持 supersession，而不是覆盖旧事实；
+- 上游 Memory 变化时对下游 Memory 做 cascading invalidation / revalidation；
+- retrieval 命中后必须继续经过 temporal / validity / provenance gate；
+- `AI_EXECUTED`、`UNKNOWN` 和 `STRUCTURED_SHORT` 均不能绕过既有学习与隐私边界；
+- 第一版只做 deterministic extractors，不引入 LLM memory summarization、embedding 或 vector DB。
+
+在 B2 通过前，不进入 learned policy。B2 完成后，Milestone C 才开始 Frequency / Markov / Retrieval 等预测基线。
