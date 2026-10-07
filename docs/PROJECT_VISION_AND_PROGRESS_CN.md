@@ -605,3 +605,15 @@ B2 当前状态：**设计已冻结，产品实现尚未开始。**
 - 第一版只做 deterministic extractors，不引入 LLM memory summarization、embedding 或 vector DB。
 
 在 B2 通过前，不进入 learned policy。B2 完成后，Milestone C 才开始 Frequency / Markov / Retrieval 等预测基线。
+
+## 17. B2 Implementation Plan 状态（2026-10-07）
+
+B2 的实现计划已经完成，但产品代码尚未开始。计划文件：
+
+`docs/superpowers/plans/2026-10-07-milestone-b2-temporal-memory.md`
+
+V1 预注册门槛采用保守设置：FACT 至少 3 次支持、跨 2 个 session、支持率至少 0.80；HABIT 至少 5 次 eligible 支持、跨 3 个 session、支持率至少 0.70，并要求真实人类来源支持。AI_EXECUTED 与 UNKNOWN 不得通过重复次数“刷成”用户习惯。
+
+实现顺序冻结为：Memory schema/ID → transactional storage → provenance eligibility → temporal state/supersession → dependency/invalidation → FACT extractor → HABIT extractor → consolidation → gated/as-of retrieval → reconstruction/audit CLI → real-session qualification。
+
+当前状态：**B2 design + implementation plan complete; implementation not started.**
