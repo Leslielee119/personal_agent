@@ -1,7 +1,7 @@
 # Milestone C — Predictive Baselines Design
 
 日期：2026-10-07
-状态：Draft for written-spec review after literature review
+状态：Approved for implementation planning after final validity review
 
 ## 1. 目标
 
@@ -251,6 +251,20 @@ latest session(s)  -> test
 
 所有 baseline 必须输出完整、归一化的 target probability distribution，而不只输出 argmax；这样 Top-k、MRR 与 NLL 才来自同一预测对象。对 unseen context/target 的非零概率处理必须由训练侧固定 backoff/smoothing 决定，不能读取 test 频率。
 
+### 9.1 Prediction vocabulary 与 unseen contract
+
+每个 target space 的概率空间只允许由 training cutoff 之前可见的标签构成，并额外保留一个 `__UNSEEN__` 概率桶：
+
+```text
+prediction_vocabulary = sorted(train_labels) + [__UNSEEN__]
+```
+
+- validation/test 首次出现的真实新标签在 NLL 中映射到 `__UNSEEN__`；
+- `__UNSEEN__` 仅承担概率质量与 coverage 记账，不代表模型猜中了具体新标签；
+- 对具体 unseen target，Top-1 / HitRate@3 / MRR 一律按 miss 处理；
+- Macro-F1 不把 `__UNSEEN__` 当作普通业务类别冒充精确分类能力；
+- `unseen-target rate` 必须单独报告。
+
 ### B0 Global Frequency
 
 \[
@@ -259,7 +273,17 @@ P(A)
 
 永远预测训练集最常见 action distribution。
 
-### B1 Contextual Frequency
+### B1 Persistence / Copy-last
+
+\[
+\hat A_t=A_{t-1}
+\]
+
+这是桌面行为必须显式加入的 persistence baseline。它用于区分“用户长期停留在同一应用/操作”与真正的下一动作预测能力。若上一标签不在当前 vocabulary 中，按 `__UNSEEN__` / Global Frequency 的冻结 backoff 处理。
+
+除全样本指标外，每个 target space 额外报告 transition-only diagnostic：仅在 `A_t != A_{t-1}` 的样本上重新计算指标。Application 任务将该切片记为 `application-switch`。该切片只用于诊断，不替代主 benchmark。
+
+### B2 Contextual Frequency
 
 条件逐步增加：
 
@@ -271,13 +295,13 @@ current application + last operation
 
 需要 deterministic backoff 到 Global Frequency。
 
-### B2 Bigram
+### B3 Bigram
 
 \[
 P(A_t|A_{t-1})
 \]
 
-### B3 Trigram
+### B4 Trigram
 
 \[
 P(A_t|A_{t-2}, A_{t-1})
@@ -306,6 +330,8 @@ recent exogenous event-type set
 idle bucket
 time-of-day bucket (optional ablation)
 ```
+
+若冻结的 B1 schema 只暴露 exogenous event IDs、没有安全的 event-type 派生字段，则 C V1 必须把 `recent exogenous event-type set` 标记为 `UNAVAILABLE_FROM_B1_V1` 并留空；禁止为了补齐该特征直接回读 canonical/raw event payload。后续若 B1 增加安全的 event-type 字段，应通过 schema/version 升级进入 C，而不是在 benchmark 内越过 B1 边界。
 
 禁止：
 
@@ -348,6 +374,8 @@ Memory 必须通过 B2 retrieval gate：
 
 C 不得直接读取 CANDIDATE / NEEDS_REVALIDATION Memory 当作模型上下文。
 
+历史 benchmark 不允许直接拿“完整日志结束后”的 B2 run 回看更早的 test target。每个 fold 的 Memory 必须由该 fold train cutoff 之前的 evidence 做 as-of reconstruction，或使用 `source_high_water < test_start_seq` 的等价 prefix-safe B2 snapshot。若无法建立这样的 prefix-safe Memory snapshot，则 C3 必须停止并报告 Memory source 不具备时间安全性，不能退化为使用 full-log Memory。
+
 ### 11.1 Memory feature
 
 V1 只允许结构化 Memory 特征：
@@ -360,6 +388,32 @@ scope rank
 ```
 
 不把 audit text、raw evidence payload 或自由文本摘要送进 predictor。
+
+### 11.2 Memory Ablation Eligibility Gate
+
+C3 只有在真实 test exposure 足以形成可识别干预时才允许进入 Memory value 判定。对每个 target space 固定报告：
+
+```text
+memory_available_samples
+memory_coverage
+memory_exposed_test_sessions
+distinct_active_memory_ids
+```
+
+V1 工程资格阈值预注册为：
+
+- `memory_available_samples >= 40`；
+- `memory_coverage >= 0.20`；
+- `memory_exposed_test_sessions >= 2`；
+- `distinct_active_memory_ids >= 2`。
+
+任一项不满足时，C3 返回：
+
+```text
+INSUFFICIENT_MEMORY_EXPOSURE
+```
+
+此状态表示“当前数据不足以识别 Memory 增量”，不得改写成 `NO_NONREDUNDANT_MEMORY_GAIN`。只有 exposure gate 通过后，Retrieval + Memory 与 Retrieval-only 的差值才具有 Gate 3 解释资格。
 
 ## 12. 指标
 
@@ -386,7 +440,38 @@ Delta_memory  = Retrieval+Memory - Retrieval
 
 绝对 accuracy 不作为唯一结论。
 
+### 12.2 Primary decision metric
+
+Gate 1–3 的主决策指标统一固定为 per-sample NLL，定义候选相对参考方法的改进为：
+
+\[
+\Delta_{NLL}=NLL_{reference}-NLL_{candidate}
+\]
+
+因此 `Delta_NLL > 0` 表示候选方法更好。Top-1、HitRate@3、MRR、Macro-F1 为 secondary metrics，只用于解释结果，不能在 primary NLL gate 失败时“救回”结论。
+
+最小工程有效增益冻结为：
+
+\[
+\tau_{NLL}=\max(0.01\text{ nats},\ 0.01\cdot NLL_{reference})
+\]
+
+该阈值是本项目预注册的工程判据，不声称是文献通用标准。
+
+模型/配置选择必须只使用 train/validation。所谓 `best action-only baseline` 是 validation NLL 最优的单一 baseline；test 只能用于一次冻结后的评估，禁止按 test 指标重新选 baseline 或调参数。
+
 ## 13. 结果解释 Gate
+
+### 13.1 统一 decision protocol
+
+Gate 1–3 都使用冻结后的 primary NLL protocol：
+
+1. 候选模型/配置仅由 validation NLL 选择；
+2. 至少需要 2 个可评估 rolling test folds；
+3. 若恰有 2 folds，两者都必须 `Delta_NLL > 0`；若有 3 个及以上 folds，至少 `2/3` folds 必须 `Delta_NLL > 0`；
+4. median `Delta_NLL >= tau_NLL`；
+5. secondary metrics 只能作为解释，不改变 Gate PASS/FAIL；
+6. inferential status 与 engineering gate 分开：独立 test sessions < 5 时只能标记 `DESCRIPTIVE_ONLY`；达到至少 5 个独立 test sessions 后，才运行 session-level bootstrap / paired session test 并允许形成 confirmatory statistical claim。
 
 ### Gate 0 — Data validity
 
@@ -394,9 +479,9 @@ C0 PASS 才允许正式模型比较。
 
 ### Gate 1 — Sequential predictability
 
-要求 best action-only contextual/Markov baseline 在至少两个 rolling test fold 上稳定优于 Global Frequency。
+从 B1 Persistence、Contextual Frequency、Bigram、Trigram 中，按 validation NLL 选定 best action-only baseline，再与 Global Frequency 比较。
 
-如果没有：
+若不满足统一 decision protocol：
 
 ```text
 NO_STABLE_SEQUENCE_SIGNAL
@@ -404,9 +489,9 @@ NO_STABLE_SEQUENCE_SIGNAL
 
 ### Gate 2 — State value
 
-Structured Retrieval 必须稳定优于 best action-only baseline，才可以声称 structured state 有额外预测价值。
+冻结 Structured Retrieval 配置后，与 Gate 1 已在 validation 阶段选定的 best action-only baseline 比较。
 
-否则：
+若不满足统一 decision protocol：
 
 ```text
 NO_NONREDUNDANT_STATE_GAIN
@@ -414,9 +499,15 @@ NO_NONREDUNDANT_STATE_GAIN
 
 ### Gate 3 — Memory value
 
-Retrieval + B2 Memory 必须稳定优于 Retrieval-only，才可以声称长期 Memory 有独立预测价值。
+先通过 11.2 的 Memory Ablation Eligibility Gate。通过后，保持 Retrieval 配置完全相同，只增加 B2 ACTIVE Memory 特征，并与 Retrieval-only 比较。
 
-否则：
+若 exposure 不足：
+
+```text
+INSUFFICIENT_MEMORY_EXPOSURE
+```
+
+若 exposure 足够但不满足统一 decision protocol：
 
 ```text
 NO_NONREDUNDANT_MEMORY_GAIN
@@ -430,10 +521,13 @@ NO_NONREDUNDANT_MEMORY_GAIN
 
 - 报告每 fold 结果；
 - 报告 median / mean delta；
-- 报告 bootstrap CI 或 paired permutation test；
+- 主比较单位优先是完整 test session / rolling fold，而不是 action row；
+- 禁止把同一 session 内高度相关的 action rows 当作 i.i.d. 样本做普通 row bootstrap；
+- 独立 test sessions >= 5 时，使用 session-level paired bootstrap 或 paired session permutation test；
+- 单个长 session 的 moving/block bootstrap 只能作为依赖结构诊断，不能替代独立 session 的 confirmatory evidence；
 - 不只报单次 pooled accuracy。
 
-数据不足以支持统计检验时明确标记 descriptive-only。
+独立数据不足时必须明确标记 `DESCRIPTIVE_ONLY`，不能输出具有统计确认含义的结论。
 
 ## 15. Concept drift
 
