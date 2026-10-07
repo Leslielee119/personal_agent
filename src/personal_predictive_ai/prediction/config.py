@@ -31,6 +31,16 @@ class PredictionConfigV1(BaseModel):
     persistence_copy_mass: Literal[0.99] = 0.99
     ngram_absolute_discount: Literal[0.75] = 0.75
 
+    retrieval_top_k: Literal[20] = 20
+    retrieval_neighbor_mass: Literal[0.99] = 0.99
+    retrieval_weight_foreground_application: Literal[1.0] = 1.0
+    retrieval_weight_previous_operation: Literal[1.0] = 1.0
+    retrieval_weight_process_jaccard: Literal[1.0] = 1.0
+    retrieval_weight_exogenous_jaccard: Literal[1.0] = 1.0
+    retrieval_weight_suffix: Literal[1.0] = 1.0
+    retrieval_weight_idle_bucket: Literal[1.0] = 1.0
+    retrieval_weight_time_of_day: Literal[0.0] = 0.0
+
     memory_min_available_samples: Literal[40] = 40
     memory_min_coverage: Literal[0.2] = 0.2
     memory_min_exposed_test_sessions: Literal[2] = 2
