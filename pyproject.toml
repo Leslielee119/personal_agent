@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "personal-predictive-ai"
+version = "0.0.1"
+description = "Fully local personal predictive computing framework"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "pydantic>=2,<3",
+  "pydantic-settings>=2,<3",
+  "psutil>=5,<8",
+  "watchdog>=4,<7",
+]
+
+[project.scripts]
+ppa = "personal_predictive_ai.cli:main"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8,<10",
+  "pytest-asyncio>=0.23,<2",
+  "ruff>=0.8,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/personal_predictive_ai"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--basetemp=.pytest-tmp"
+python_files = ["test_*.py"]
+markers = ["slow: native or long-running integration test"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
