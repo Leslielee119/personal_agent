@@ -1,4 +1,4 @@
-# Milestone B2 ? Temporal Provenance Memory Acceptance
+# Milestone B2 — Temporal Provenance Memory Acceptance
 
 Date: 2026-10-07
 Branch: `feature/milestone-b2-temporal-memory`
@@ -6,7 +6,7 @@ Scope: deterministic long-term temporal Memory over B1 evidence. No vector DB, e
 
 ## Overall status
 
-**QUALIFIED FOR B2 V1 SEMANTICS ? REAL-SESSION RECONSTRUCTION PASS; LONGITUDINAL UTILITY NOT YET ESTABLISHED.**
+**QUALIFIED FOR B2 V1 SEMANTICS — REAL-SESSION RECONSTRUCTION PASS; LONGITUDINAL UTILITY NOT YET ESTABLISHED.**
 
 The B2 semantic/storage/reconstruction stack passes both automated deterministic/privacy qualification and a new persistent real-session reconstruction. The real session produced only one B1 session, so the frozen multi-session gates correctly left all Memory records as CANDIDATE. This qualifies the B2 V1 semantics and conservative gating behavior; it does not establish long-horizon personalization quality.
 
@@ -73,7 +73,7 @@ The one skip remains the existing native physical-input smoke when no physical i
 
 ## Known V1 limitations
 
-- The V1 foreground-application FACT extractor is a full-run frequency aggregate. It does **not** yet infer temporal change points such as ?Chrome was primary, then Firefox became primary.? The supersession state machine and persistence path are implemented and covered by synthetic deterministic tests, but automatic real-world preference migration detection is not yet implemented.
+- The V1 foreground-application FACT extractor is a full-run frequency aggregate. It does **not** yet infer temporal change points such as “Chrome was primary, then Firefox became primary.” The supersession state machine and persistence path are implemented and covered by synthetic deterministic tests, but automatic real-world preference migration detection is not yet implemented.
 - The V1 reconstruction creates no Memory dependency edges because no deterministic dependency extractor has been approved. Dependency storage, propagation, cycle handling, and retrieval consistency are implemented for future extractors.
 - B2 therefore establishes temporal/provenance semantics and safe gates; it does not yet prove that every temporal transition can be discovered automatically from user history.
 
