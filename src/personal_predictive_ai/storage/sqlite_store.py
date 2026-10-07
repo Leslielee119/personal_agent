@@ -102,6 +102,19 @@ class EventStore:
         for row in rows:
             yield parse_canonical_event(json.loads(row["data_json"]))
 
+    def iter_events_by_sequence(self, *, limit: int | None = None) -> Iterator[CanonicalEvent]:
+        query = "SELECT data_json FROM canonical_events ORDER BY monotonic_seq ASC"
+        params: list[int] = []
+        if limit is not None:
+            if limit < 0:
+                raise ValueError("limit must be non-negative")
+            query += " LIMIT ?"
+            params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(query, params).fetchall()
+        for row in rows:
+            yield parse_canonical_event(json.loads(row["data_json"]))
+
     def count(self) -> int:
         with self._lock:
             row = self._conn.execute("SELECT COUNT(*) AS n FROM canonical_events").fetchone()

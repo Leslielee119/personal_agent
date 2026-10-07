@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -9,8 +9,10 @@ from typing import Sequence
 
 from personal_predictive_ai.collector.base import Collector, CollectorContext
 from personal_predictive_ai.config import Settings
+from personal_predictive_ai.diagnostics.state_replay import derive_b1, iter_b1_replay_lines
 from personal_predictive_ai.events.ids import EventFactory
 from personal_predictive_ai.runtime.service import CaptureService, ServiceStatus
+from personal_predictive_ai.storage.derived_store import DerivedStore
 
 
 def _settings_from_args(args: argparse.Namespace) -> Settings:
@@ -104,6 +106,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="enable native keyboard/mouse/UIA plus event-driven screen capture",
     )
 
+    derive = subparsers.add_parser("derive-b1")
+    derive.add_argument("--run-id", required=True)
+    replay = subparsers.add_parser("replay-b1")
+    replay.add_argument("--run-id", required=True)
+    replay.add_argument("--limit", type=int, default=None)
+
     subparsers.add_parser("status")
     expire = subparsers.add_parser("expire-raw")
     expire.add_argument("--now-ns", type=int, default=None)
@@ -114,6 +122,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = _settings_from_args(args)
     factory = EventFactory()
+
+    if args.command == "derive-b1":
+        summary = derive_b1(settings.data_dir / "events.db", run_id=args.run_id)
+        print(json.dumps(summary, sort_keys=True))
+        return 0
+
+    if args.command == "replay-b1":
+        store = DerivedStore(settings.data_dir / "events.db")
+        try:
+            for line in iter_b1_replay_lines(store, args.run_id, limit=args.limit):
+                print(line)
+        finally:
+            store.close()
+        return 0
 
     if args.command == "status":
         service = CaptureService(settings=settings, collectors=[], event_factory=factory)
