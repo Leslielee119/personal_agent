@@ -39,3 +39,22 @@ def test_continuity_correct_and_evidence_cli(tmp_path: Path, capsys) -> None:
     evidence = json.loads(capsys.readouterr().out)
     assert any(item["content"].get("value") == "new goal" for item in evidence)
     assert all(item["task_id"] == task_id for item in evidence)
+
+
+def test_continuity_forget_cli_deletes_task(tmp_path: Path, capsys) -> None:
+    data_dir, task_id = _init_task(tmp_path, capsys)
+    code = main([
+        "--data-dir", str(data_dir), "continuity-forget",
+        "--scope", "task", "--id", task_id,
+    ])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["scope_type"] == "task"
+
+    code = main([
+        "--data-dir", str(data_dir), "continuity-resume",
+        "--task-id", task_id, "--format", "json",
+    ])
+    assert code == 2
+    error = json.loads(capsys.readouterr().out)
+    assert error["error"] == "continuity_error"

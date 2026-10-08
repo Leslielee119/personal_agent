@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from personal_predictive_ai.continuity.ids import evidence_id_for, field_version_id_for
 from personal_predictive_ai.continuity.models import (
     ContinuityRecordStatus,
+    DeletionTombstoneRecord,
     EvidenceRecord,
     FieldProvenance,
     TaskSnapshot,
@@ -88,6 +91,23 @@ class CorrectionService:
                 old.model_copy(update={"status": ContinuityRecordStatus.SUPERSEDED})
             )
         return self.state.build(task_id, as_of_ns=now_ns)
+
+    def forget(
+        self,
+        scope_type: Literal["evidence", "task", "workcopy", "project"],
+        scope_id: str,
+        *,
+        now_ns: int,
+    ) -> DeletionTombstoneRecord:
+        if scope_type == "evidence":
+            return self.store.delete_evidence(scope_id, now_ns=now_ns)
+        if scope_type == "task":
+            return self.store.delete_task(scope_id, now_ns=now_ns)
+        if scope_type == "workcopy":
+            return self.store.delete_workcopy(scope_id, now_ns=now_ns)
+        if scope_type == "project":
+            return self.store.delete_project(scope_id, now_ns=now_ns)
+        raise ValueError(f"unsupported forget scope: {scope_type}")
 
     def _active_versions(self, task_id: str, field_name: str) -> list[TaskStateFieldVersion]:
         return [

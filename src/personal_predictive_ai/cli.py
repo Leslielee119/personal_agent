@@ -190,6 +190,12 @@ def build_parser() -> argparse.ArgumentParser:
     continuity_evidence.add_argument("--task-id", required=True)
     continuity_evidence.add_argument("--field", default=None)
 
+    continuity_forget = subparsers.add_parser("continuity-forget")
+    continuity_forget.add_argument(
+        "--scope", choices=["evidence", "task", "workcopy", "project"], required=True
+    )
+    continuity_forget.add_argument("--id", required=True)
+
     knowledge_import = subparsers.add_parser("knowledge-import")
     knowledge_import.add_argument("--file", type=Path, required=True)
 
@@ -251,6 +257,7 @@ _CONTINUITY_COMMANDS = {
     "continuity-resume",
     "continuity-correct",
     "continuity-evidence",
+    "continuity-forget",
 }
 
 
@@ -432,6 +439,11 @@ def _run_continuity_command(args: argparse.Namespace, settings: Settings) -> int
                 args.task_id, field_name=args.field
             )
             _print_json([item.model_dump(mode="json") for item in items])
+        elif args.command == "continuity-forget":
+            tombstone = CorrectionService(store).forget(
+                args.scope, args.id, now_ns=now_ns
+            )
+            _print_json(tombstone.model_dump(mode="json"))
         else:
             raise ValueError(f"unsupported continuity command: {args.command}")
         return 0
