@@ -28,7 +28,7 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _package_dir(quarantine_root: Path, package_id: str) -> Path:
+def package_directory(quarantine_root: Path, package_id: str) -> Path:
     return quarantine_root / package_id.replace(":", "_")
 
 def validate_package_reference_path(value: str) -> Path:
@@ -94,7 +94,7 @@ def quarantine_local_package(
         source_revision,
         content_hash,
     )
-    destination = _package_dir(quarantine_root, package_id)
+    destination = package_directory(quarantine_root, package_id)
     destination.mkdir(parents=True, exist_ok=False)
     for source, relative in files:
         target = destination / Path(relative)
@@ -148,7 +148,7 @@ def scan_package(
     manifest = store.get_package_manifest(package_id)
     if manifest is None:
         raise KeyError(package_id)
-    package_dir = _package_dir(quarantine_root, package_id)
+    package_dir = package_directory(quarantine_root, package_id)
     findings: list[dict[str, str]] = []
     for relative in manifest.referenced_files:
         safe_relative = validate_package_reference_path(relative)

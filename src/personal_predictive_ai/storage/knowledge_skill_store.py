@@ -147,6 +147,23 @@ class KnowledgeSkillStore:
         for row in rows:
             yield SkillRecord.model_validate(json.loads(row["data_json"]))
 
+    def iter_latest_skills(self) -> Iterator[SkillRecord]:
+        with self._lock:
+            rows = self._conn.execute(
+                """
+                SELECT current.data_json
+                FROM skill_records AS current
+                JOIN (
+                    SELECT skill_id, MAX(version) AS version
+                    FROM skill_records GROUP BY skill_id
+                ) AS latest
+                ON current.skill_id=latest.skill_id AND current.version=latest.version
+                ORDER BY current.skill_id ASC
+                """
+            ).fetchall()
+        for row in rows:
+            yield SkillRecord.model_validate(json.loads(row["data_json"]))
+
     def put_package_manifest(self, manifest: SkillPackageManifest) -> None:
         with self._lock, self._conn:
             self._conn.execute(
