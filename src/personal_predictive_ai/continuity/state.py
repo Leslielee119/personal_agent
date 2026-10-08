@@ -8,6 +8,7 @@ from personal_predictive_ai.continuity.ids import (
     snapshot_id_for,
 )
 from personal_predictive_ai.continuity.models import (
+    ApplicabilityStatus,
     EvidenceRecord,
     FieldConflict,
     FieldProvenance,
@@ -130,7 +131,7 @@ class TaskStateService:
 
         active_by_field: dict[str, list[TaskStateFieldVersion]] = {}
         for item in self.store.iter_field_versions(task_id, as_of_ns=as_of_ns):
-            if item.status.value == "active":
+            if _is_effective_at(item, as_of_ns):
                 active_by_field.setdefault(item.field_name, []).append(item)
 
         latest: dict[str, TaskStateFieldVersion] = {}
@@ -168,7 +169,7 @@ class TaskStateService:
         if verification_results:
             current_result = verification_results[-1]
             verified_result_ids = [current_result.result_id]
-            applicability = current_result.applicability
+            applicability = ApplicabilityStatus.UNSUPPORTED
             if git_state is not None:
                 applicability = VerificationService.evaluate(current_result, git_state)
             verification_applicability[current_result.result_id] = applicability
@@ -211,6 +212,16 @@ class TaskStateService:
         )
         self.store.add_snapshot(snapshot)
         return snapshot
+
+
+def _is_effective_at(item: TaskStateFieldVersion, as_of_ns: int) -> bool:
+    if item.status.value == "active":
+        return True
+    return (
+        item.status.value == "superseded"
+        and item.superseded_at_ns is not None
+        and as_of_ns < item.superseded_at_ns
+    )
 
 
 def _text(item: TaskStateFieldVersion | None) -> str | None:

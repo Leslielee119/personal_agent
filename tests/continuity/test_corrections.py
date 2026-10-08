@@ -103,3 +103,26 @@ def test_evidence_view_is_task_scoped_and_as_of_safe(tmp_path: Path) -> None:
         assert not any(item.task_id == second.task.task_id for item in current)
     finally:
         store.close()
+
+
+def test_corrections_preserve_historical_as_of_state(tmp_path: Path) -> None:
+    store, binding = _task(tmp_path)
+    try:
+        service = CorrectionService(store)
+        service.add_item(binding.task.task_id, "blockers", "old blocker", now_ns=12)
+        service.correct_scalar(
+            binding.task.task_id, "current_goal", "new goal", now_ns=20
+        )
+        service.resolve_item(
+            binding.task.task_id, "blockers", "old blocker", now_ns=30
+        )
+
+        historical = TaskStateService(store).build(binding.task.task_id, as_of_ns=15)
+        assert historical.current_goal == "old goal"
+        assert historical.blockers == ["old blocker"]
+
+        current = TaskStateService(store).build(binding.task.task_id, as_of_ns=30)
+        assert current.current_goal == "new goal"
+        assert current.blockers == []
+    finally:
+        store.close()

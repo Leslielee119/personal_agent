@@ -39,7 +39,12 @@ class CorrectionService:
         )
         for old in active:
             self.store.replace_field_version(
-                old.model_copy(update={"status": ContinuityRecordStatus.SUPERSEDED})
+                old.model_copy(
+                    update={
+                        "status": ContinuityRecordStatus.SUPERSEDED,
+                        "superseded_at_ns": now_ns,
+                    }
+                )
             )
         supersedes = active[-1].field_version_id if active else None
         self._add_field_version(
@@ -88,7 +93,12 @@ class CorrectionService:
         self._write_evidence(task_id, field_name, value, action="resolve", now_ns=now_ns)
         for old in matching:
             self.store.replace_field_version(
-                old.model_copy(update={"status": ContinuityRecordStatus.SUPERSEDED})
+                old.model_copy(
+                    update={
+                        "status": ContinuityRecordStatus.SUPERSEDED,
+                        "superseded_at_ns": now_ns,
+                    }
+                )
             )
         return self.state.build(task_id, as_of_ns=now_ns)
 

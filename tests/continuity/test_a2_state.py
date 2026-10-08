@@ -141,3 +141,30 @@ def test_snapshot_records_current_git_observation_evidence(tmp_path: Path) -> No
         assert git_evidence[0].evidence_id in snapshot.evidence_ids
     finally:
         store.close()
+
+
+def test_verification_environment_drift_requires_revalidation(
+    tmp_path: Path, monkeypatch
+) -> None:
+    root = _git_repo(tmp_path)
+    store = ContinuityStore(tmp_path / "continuity.db")
+    try:
+        binding = ContinuityRegistry(store).bind("p", root, "task", now_ns=1)
+        git_state = GitObserver().observe(binding.workcopy, now_ns=10)
+        service = VerificationService(store)
+        result = service.record_user_declared(
+            binding.task.task_id,
+            check_kind="pytest",
+            outcome="pass",
+            command_or_adapter_scope="pytest -q",
+            git_state=git_state,
+            now_ns=11,
+        )
+        monkeypatch.setattr(
+            VerificationService,
+            "_environment_fingerprint",
+            staticmethod(lambda: "changed-environment"),
+        )
+        assert service.evaluate(result, git_state) == ApplicabilityStatus.NEEDS_REVALIDATION
+    finally:
+        store.close()

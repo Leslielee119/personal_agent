@@ -421,7 +421,7 @@ def _run_continuity_command(args: argparse.Namespace, settings: Settings) -> int
             binding = registry.resolve_task(args.task_id)
             try:
                 git_state = GitObserver().observe(binding.workcopy, now_ns=now_ns)
-            except (subprocess.CalledProcessError, FileNotFoundError):
+            except (subprocess.CalledProcessError, OSError, ValueError):
                 git_state = None
             snapshot = state.build(args.task_id, as_of_ns=now_ns, git_state=git_state)
             brief = brief_service.render(snapshot, generated_at_ns=now_ns)

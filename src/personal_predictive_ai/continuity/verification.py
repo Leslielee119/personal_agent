@@ -93,6 +93,8 @@ class VerificationService:
     ) -> ApplicabilityStatus:
         if result.workcopy_id != current_git_state.workcopy_id:
             return ApplicabilityStatus.UNSUPPORTED
+        if result.environment_fingerprint != VerificationService._environment_fingerprint():
+            return ApplicabilityStatus.NEEDS_REVALIDATION
         if result.code_state_fingerprint != current_git_state.code_state_fingerprint:
             return ApplicabilityStatus.NEEDS_REVALIDATION
         return ApplicabilityStatus.CURRENT

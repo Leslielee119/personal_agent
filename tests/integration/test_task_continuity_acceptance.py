@@ -173,3 +173,29 @@ def test_frozen_cross_worktree_task_continuity_acceptance(tmp_path: Path, capsys
     for candidate in (db_path, Path(str(db_path) + "-wal"), Path(str(db_path) + "-shm")):
         if candidate.exists():
             assert raw not in candidate.read_bytes()
+
+
+def test_resume_fails_closed_when_git_observation_is_unavailable(tmp_path: Path, capsys) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init")
+    _git(root, "config", "user.email", "test@example.com")
+    _git(root, "config", "user.name", "Test User")
+    (root / "work.txt").write_text("base\n", encoding="utf-8")
+    _git(root, "add", "work.txt")
+    _git(root, "commit", "-m", "initial")
+    data_dir = tmp_path / "data"
+    task_id = _init_task(capsys, data_dir, root, title="task", goal="goal")
+    _record_result(capsys, data_dir, task_id, "pass")
+
+    git_dir = root / ".git"
+    broken = root / ".git-broken"
+    git_dir.rename(broken)
+    try:
+        payload = _resume_json(capsys, data_dir, task_id)
+    finally:
+        broken.rename(git_dir)
+
+    assert set(payload["snapshot"]["verification_applicability"].values()) == {
+        "unsupported"
+    }

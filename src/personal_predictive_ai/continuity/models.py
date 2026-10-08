@@ -104,6 +104,7 @@ class TaskStateFieldVersion(_FrozenModel):
     evidence_ids: list[str] = Field(default_factory=list)
     created_at_ns: int = Field(ge=0)
     supersedes: str | None = None
+    superseded_at_ns: int | None = Field(default=None, ge=0)
     status: ContinuityRecordStatus = ContinuityRecordStatus.ACTIVE
 
     @field_validator("value")

@@ -12,6 +12,10 @@ from personal_predictive_ai.continuity.models import GitWorkCopyState, WorkCopyR
 class GitObserver:
     def observe(self, workcopy: WorkCopyRecord, *, now_ns: int) -> GitWorkCopyState:
         root = Path(workcopy.canonical_root).resolve(strict=True)
+        reported_root = self._run(root, "rev-parse", "--show-toplevel").decode("utf-8").strip()
+        resolved_reported_root = Path(reported_root).resolve(strict=True)
+        if os.path.normcase(str(resolved_reported_root)) != os.path.normcase(str(root)):
+            raise ValueError("git repository root does not match registered workcopy root")
         head = self._run(root, "rev-parse", "HEAD").decode("utf-8").strip()
         branch = self._run(root, "rev-parse", "--abbrev-ref", "HEAD").decode("utf-8").strip()
         status = self._run(
@@ -56,16 +60,22 @@ class GitObserver:
 
     @staticmethod
     def _run(root: Path, *args: str) -> bytes:
+        env = os.environ.copy()
+        env["GIT_OPTIONAL_LOCKS"] = "0"
+        env["GIT_CONFIG_COUNT"] = "1"
+        env["GIT_CONFIG_KEY_0"] = "core.fsmonitor"
+        env["GIT_CONFIG_VALUE_0"] = "false"
         completed = subprocess.run(
             ["git", "-C", str(root), *args],
             check=True,
             capture_output=True,
+            env=env,
         )
         return bytes(completed.stdout)
 
     @staticmethod
     def _untracked_digest(root: Path, status: bytes) -> str:
-        entries: list[tuple[str, bytes]] = []
+        entries: list[tuple[str, str]] = []
         for raw in status.split(b"\x00"):
             if not raw.startswith(b"?? "):
                 continue
@@ -75,11 +85,19 @@ class GitObserver:
                 raise ValueError("untracked path escapes registered workcopy")
             if not candidate.is_file():
                 continue
-            entries.append((relative.replace("\\", "/"), candidate.read_bytes()))
+            entries.append((relative.replace("\\", "/"), _stream_sha256(candidate)))
         digest = hashlib.sha256()
-        for relative, content in sorted(entries):
+        for relative, content_digest in sorted(entries):
             digest.update(relative.encode("utf-8", errors="surrogateescape"))
             digest.update(b"\x00")
-            digest.update(content)
+            digest.update(content_digest.encode("ascii"))
             digest.update(b"\x00")
         return digest.hexdigest()
+
+
+def _stream_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
