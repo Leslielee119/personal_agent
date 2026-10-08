@@ -1,7 +1,7 @@
 # Milestone E — Personal Knowledge & Verified Skill Plane Design
 
 日期：2026-10-07
-状态：Revised draft for written-spec review — 2026-10-08 trust hardening integrated
+状态：Approved design baseline — 2026-10-08 trust hardening integrated; E0/E1 implementation plan pending execution choice
 
 ## 1. 目标
 
