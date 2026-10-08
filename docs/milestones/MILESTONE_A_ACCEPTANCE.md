@@ -190,3 +190,16 @@ The 5-minute pre-soak is not a substitute for this gate.
 Current decision: **Milestone A remains qualification-pending solely because the formal 8-hour soak has not yet been completed.**
 
 The capture/data-plane implementation is functionally complete; the measured short qualification is healthy; and real native physical-mouse evidence is now recorded. Higher-level B1/B2/C/E work may continue under the prior ruling, but Milestone A must not be called fully qualified until the required 8-hour soak also passes.
+
+## 8-hour soak evidence hardening — 2026-10-08
+
+正式 8-hour soak 前重新执行了 30 秒端到端 harness smoke。当前 `main` 基线产生 `health_report.json` 与 replay，观测到 SQLite integrity=`ok`、ordering consistency=1.0、external established max=0、privacy violations=0、raw TTL violations=0。
+
+审计同时发现旧 `health_report.json` 只导出 provider errors，未直接导出 runtime `bus_errors`。正式 Gate 明确要求 provider/bus errors 均可机读，因此本轮补充：
+
+- `bus_errors` 从 `runtime_status.json` 显式进入 health report；
+- `offline_mode` 同步进入 health report；
+- runtime status 缺失或字段类型非法时返回 `null`，不以 `0/true` 默认值掩盖证据缺失；
+- 真实 smoke 回放得到 `bus_errors=0`、`offline_mode=true`、provider errors={}。
+
+该 hardening 只改善资格证据的机器可审计性，不改变 capture 行为或 8-hour Gate 阈值。

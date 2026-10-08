@@ -53,7 +53,13 @@ def test_health_report_detects_order_privacy_resource_and_network_evidence(tmp_p
     )
     status_path = tmp_path / "runtime_status.json"
     status_path.write_text(
-        json.dumps({"provider_errors": {"broken": "fixture failure"}}),
+        json.dumps(
+            {
+                "provider_errors": {"broken": "fixture failure"},
+                "bus_errors": 2,
+                "offline_mode": True,
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -75,6 +81,8 @@ def test_health_report_detects_order_privacy_resource_and_network_evidence(tmp_p
     assert report["data_bytes"]["growth_bytes"] == 200
     assert report["external_network"]["max_established"] == 1
     assert report["provider_errors"] == {"broken": "fixture failure"}
+    assert report["bus_errors"] == 2
+    assert report["offline_mode"] is True
 
 
 def test_health_report_flags_raw_artifacts_older_than_ttl(tmp_path: Path) -> None:
@@ -97,3 +105,5 @@ def test_health_report_flags_raw_artifacts_older_than_ttl(tmp_path: Path) -> Non
     assert report["raw_artifacts"]["count"] == 1
     assert report["raw_artifacts"]["ttl_violations"] == 1
     assert report["raw_artifacts"]["oldest_age_seconds"] == pytest.approx(11.0)
+    assert report["bus_errors"] is None
+    assert report["offline_mode"] is None
