@@ -126,8 +126,8 @@ class ContinuityStore:
 
     def add_snapshot(self, item: TaskSnapshot) -> None:
         self._insert(
-            "INSERT INTO continuity_snapshots(snapshot_id, task_id, captured_at_ns, data_json) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO continuity_snapshots("
+            "snapshot_id, task_id, captured_at_ns, data_json) VALUES (?, ?, ?, ?)",
             (item.snapshot_id, item.task_id, item.captured_at_ns, self._encode(item)),
         )
 
@@ -160,6 +160,9 @@ class ContinuityStore:
 
     def get_task(self, task_id: str) -> TaskRecord | None:
         return self._get("continuity_tasks", "task_id", task_id, TaskRecord)
+
+    def get_snapshot(self, snapshot_id: str) -> TaskSnapshot | None:
+        return self._get("continuity_snapshots", "snapshot_id", snapshot_id, TaskSnapshot)
 
     def iter_evidence(
         self,

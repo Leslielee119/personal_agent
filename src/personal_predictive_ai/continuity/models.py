@@ -138,6 +138,12 @@ class TaskSnapshot(_FrozenModel):
     workcopy_id: str = Field(min_length=1)
     task_id: str = Field(min_length=1)
     captured_at_ns: int = Field(ge=0)
+    current_goal: str | None = None
+    last_position: str | None = None
+    candidate_next_step: str | None = None
+    blockers: list[str] = Field(default_factory=list)
+    pending_items: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
     field_version_ids: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     verified_result_ids: list[str] = Field(default_factory=list)
