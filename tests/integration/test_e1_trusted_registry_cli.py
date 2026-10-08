@@ -16,6 +16,7 @@ from personal_predictive_ai.skills.models import (
     VerificationMethod,
     VerificationSpec,
 )
+from personal_predictive_ai.skills.packages import package_directory
 from personal_predictive_ai.storage.knowledge_skill_store import KnowledgeSkillStore
 
 
@@ -253,3 +254,31 @@ def test_cli_export_is_deterministic_and_projection_only(tmp_path: Path, capsys)
     assert stored_manifest is not None
     assert stored_manifest.content_hash == manifest["content_hash"]
     store.close()
+
+
+
+def test_cli_scan_reports_tampered_quarantine_as_structured_error(tmp_path: Path, capsys) -> None:
+    data_dir = tmp_path / "data"
+    package_dir = tmp_path / "package-tamper"
+    package_dir.mkdir()
+    (package_dir / "SKILL.md").write_text("# Safe skill\n", encoding="utf-8")
+
+    code, manifest = _run_json(
+        capsys,
+        [
+            "--data-dir", str(data_dir), "skill-package-import", "--path", str(package_dir),
+            "--source-uri", "local://tamper", "--source-revision", "rev1",
+        ],
+    )
+    assert code == 0
+
+    quarantine_root = data_dir / "skill-packages" / "quarantine"
+    quarantined = package_directory(quarantine_root, manifest["package_id"]) / "SKILL.md"
+    quarantined.write_text("# Modified after quarantine\n", encoding="utf-8")
+
+    code, error = _run_json(
+        capsys,
+        ["--data-dir", str(data_dir), "skill-package-scan", "--package-id", manifest["package_id"]],
+    )
+    assert code == 2
+    assert error["error"] == "package_tampered"

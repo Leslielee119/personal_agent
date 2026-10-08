@@ -38,7 +38,9 @@ VERIFIED != AUTHORIZED_TO_EXECUTE
 - Skill approval 在单 SQLite transaction 内完成 version append、proposal update、audit append；
 - risk downgrade 必须有显式 override；
 - package source/revision/content hash/scanner findings 持久化；
+- package 在 scan、approve 与 L2 reference retrieval 前重新校验 exact file set + content hash，导入后新增、删除或改写文件均 fail closed；
 - QUARANTINED / SCANNED / REJECTED package 不能绑定为可信 Skill source；
+- `knowledge-import` 只接受 HUMAN_DECLARED / HUMAN_APPROVED_IMPORT source，AI_PROPOSED 不能伪装成人工知识进入 canonical registry；
 - E Store 写入不会修改 canonical Event / B1 / B2 数据。
 
 E1 的 canonical Skill 创建固定为：
@@ -58,6 +60,7 @@ E1 不允许直接提升到 `VERIFIED` 或 `ACTIVE`。
 - canonical Skill -> Markdown -> parse-back 在无编辑时 semantic equivalent；
 - semantic edit 只创建 `SkillMutationProposal`，不会 silent apply；
 - malformed YAML、unknown frontmatter、identity/version/status/provenance 篡改均 fail closed；
+- projection 中的 evidence summary 属于 machine-controlled 字段，人工改写不会被解释成新的 canonical evidence；
 - L0 仅返回 Skill index metadata；
 - L1 返回 procedure / verification / capability core，不包含 evidence corpus；
 - L2 只读取 APPROVED package manifest 白名单中的单个 UTF-8 reference；
@@ -68,7 +71,7 @@ E1 不允许直接提升到 `VERIFIED` 或 `ACTIVE`。
 Focused E0/E1 verification：
 
 ```text
-34 passed, 1 skipped
+41 passed, 1 skipped
 ```
 
 唯一 skip：当前 Windows host 不允许创建 symlink 测试夹具。实现同时检查 symlink 与 Windows junction；绝对路径、rooted path 与 `..` traversal 的非跳过测试通过。
@@ -128,7 +131,7 @@ Fresh verification on the implementation worktree:
 
 ```text
 pytest -q -rs
-260 passed, 1 skipped, 2 warnings
+266 passed, 2 skipped, 2 warnings
 
 ruff check .
 All checks passed!
@@ -137,7 +140,7 @@ git diff --check
 PASS
 ```
 
-唯一 skip 有明确环境原因：`test_quarantine_rejects_symlink_or_junction_escape` 在当前 Windows host 无法创建 symlink 测试夹具；实现仍显式检查 symlink 与 junction，且 rooted/absolute/traversal 非跳过测试通过。`test_windows_native_input_and_uia_smoke` 在本轮 final verification 中已实际通过。
+两个 skip 均有明确环境原因：`test_windows_native_input_and_uia_smoke` 本轮没有真实 physical input，OpenAdapt 按设计过滤 injected input；`test_quarantine_rejects_symlink_or_junction_escape` 在当前 Windows host 无法创建 symlink 测试夹具。实现仍显式检查 symlink 与 junction，且 rooted/absolute/traversal 非跳过测试通过。
 
 冻结结论：
 

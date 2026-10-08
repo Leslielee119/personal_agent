@@ -5,8 +5,10 @@ import pytest
 from personal_predictive_ai.skills.models import PackageTrustState
 from personal_predictive_ai.skills.packages import (
     PackageScanBlockedError,
+    PackageTamperedError,
     UnsafePackagePathError,
     approve_package,
+    package_directory,
     quarantine_local_package,
     scan_package,
     validate_package_reference_path,
@@ -65,7 +67,12 @@ def test_scan_and_approve_safe_package(tmp_path: Path) -> None:
     assert scanned.trust_state is PackageTrustState.SCANNED
     assert scanned.scanner_version == "ppa.skill-package-scan/v1"
     assert scanned.scanner_findings == []
-    approved = approve_package(store, manifest.package_id, reviewer="reviewer")
+    approved = approve_package(
+        store,
+        manifest.package_id,
+        reviewer="reviewer",
+        quarantine_root=tmp_path / "q",
+    )
     assert approved.trust_state is PackageTrustState.APPROVED
     assert approved.approved_by == "reviewer"
     store.close()
@@ -90,7 +97,12 @@ def test_blocking_findings_prevent_approval(tmp_path: Path) -> None:
     assert "sensitive_text" in codes
     assert "invisible_unicode" in codes
     with pytest.raises(PackageScanBlockedError):
-        approve_package(store, manifest.package_id, reviewer="reviewer")
+        approve_package(
+            store,
+            manifest.package_id,
+            reviewer="reviewer",
+            quarantine_root=tmp_path / "q",
+        )
     store.close()
 
 
@@ -123,4 +135,75 @@ def test_quarantine_rejects_symlink_or_junction_escape(tmp_path: Path) -> None:
             source_revision="rev1",
             quarantine_root=tmp_path / "q",
         )
+    store.close()
+
+
+def test_scan_rejects_package_modified_after_quarantine(tmp_path: Path) -> None:
+    source = tmp_path / "source-tamper"
+    source.mkdir()
+    (source / "SKILL.md").write_text("# Safe skill\n", encoding="utf-8")
+    store = _store(tmp_path, "tamper.db")
+    quarantine_root = tmp_path / "qt"
+    manifest = quarantine_local_package(
+        store,
+        source,
+        source_uri="file:///source-tamper",
+        source_revision="rev1",
+        quarantine_root=quarantine_root,
+    )
+    copied = package_directory(quarantine_root, manifest.package_id) / "SKILL.md"
+    copied.write_text("# Modified after quarantine\n", encoding="utf-8")
+
+    with pytest.raises(PackageTamperedError):
+        scan_package(store, manifest.package_id, quarantine_root=quarantine_root)
+    assert store.get_package_manifest(manifest.package_id) == manifest
+    store.close()
+
+
+def test_approval_rechecks_content_after_scan(tmp_path: Path) -> None:
+    source = tmp_path / "source-approval-tamper"
+    source.mkdir()
+    (source / "SKILL.md").write_text("# Safe skill\n", encoding="utf-8")
+    store = _store(tmp_path, "approval-tamper.db")
+    quarantine_root = tmp_path / "qa"
+    manifest = quarantine_local_package(
+        store,
+        source,
+        source_uri="file:///source-approval-tamper",
+        source_revision="rev1",
+        quarantine_root=quarantine_root,
+    )
+    scanned = scan_package(store, manifest.package_id, quarantine_root=quarantine_root)
+    copied = package_directory(quarantine_root, manifest.package_id) / "SKILL.md"
+    copied.write_text("# Modified after scan\n", encoding="utf-8")
+
+    with pytest.raises(PackageTamperedError):
+        approve_package(
+            store,
+            manifest.package_id,
+            reviewer="reviewer",
+            quarantine_root=quarantine_root,
+        )
+    assert store.get_package_manifest(manifest.package_id) == scanned
+    store.close()
+
+
+def test_scan_rejects_unlisted_file_added_after_quarantine(tmp_path: Path) -> None:
+    source = tmp_path / "source-extra-file"
+    source.mkdir()
+    (source / "SKILL.md").write_text("# Safe skill\n", encoding="utf-8")
+    store = _store(tmp_path, "extra-file.db")
+    quarantine_root = tmp_path / "qe"
+    manifest = quarantine_local_package(
+        store,
+        source,
+        source_uri="file:///source-extra-file",
+        source_revision="rev1",
+        quarantine_root=quarantine_root,
+    )
+    package_dir = package_directory(quarantine_root, manifest.package_id)
+    (package_dir / "injected.txt").write_text("unexpected\n", encoding="utf-8")
+
+    with pytest.raises(PackageTamperedError):
+        scan_package(store, manifest.package_id, quarantine_root=quarantine_root)
     store.close()

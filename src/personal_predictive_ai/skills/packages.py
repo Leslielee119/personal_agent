@@ -24,6 +24,10 @@ class PackageScanBlockedError(RuntimeError):
     pass
 
 
+class PackageTamperedError(RuntimeError):
+    pass
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -115,6 +119,42 @@ def quarantine_local_package(
     return manifest
 
 
+def verify_package_content(
+    manifest: SkillPackageManifest,
+    *,
+    quarantine_root: Path,
+) -> Path:
+    package_dir = package_directory(quarantine_root, manifest.package_id)
+    if _is_link_like(package_dir) or not package_dir.is_dir():
+        raise PackageTamperedError(manifest.package_id)
+
+    expected_paths = sorted(
+        validate_package_reference_path(relative).as_posix()
+        for relative in manifest.referenced_files
+    )
+    entries: list[tuple[str, str]] = []
+    package_root = package_dir.resolve()
+    for path in sorted(package_dir.rglob("*"), key=lambda item: item.as_posix()):
+        if _is_link_like(path):
+            raise PackageTamperedError(str(path))
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise PackageTamperedError(str(path))
+        resolved = path.resolve()
+        try:
+            relative = resolved.relative_to(package_root).as_posix()
+        except ValueError as exc:
+            raise PackageTamperedError(str(path)) from exc
+        entries.append((relative, _hash_file(resolved)))
+
+    if sorted(relative for relative, _ in entries) != expected_paths:
+        raise PackageTamperedError(manifest.package_id)
+    if _package_hash(sorted(entries)) != manifest.content_hash:
+        raise PackageTamperedError(manifest.package_id)
+    return package_dir
+
+
 def _scan_text(relative: str, text: str) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
     try:
@@ -148,7 +188,7 @@ def scan_package(
     manifest = store.get_package_manifest(package_id)
     if manifest is None:
         raise KeyError(package_id)
-    package_dir = package_directory(quarantine_root, package_id)
+    package_dir = verify_package_content(manifest, quarantine_root=quarantine_root)
     findings: list[dict[str, str]] = []
     for relative in manifest.referenced_files:
         safe_relative = validate_package_reference_path(relative)
@@ -182,6 +222,7 @@ def approve_package(
     package_id: str,
     *,
     reviewer: str,
+    quarantine_root: Path,
 ) -> SkillPackageManifest:
     manifest = store.get_package_manifest(package_id)
     if manifest is None:
@@ -190,6 +231,7 @@ def approve_package(
         raise PackageScanBlockedError("package must be scanned before approval")
     if any(item.get("severity") == "blocking" for item in manifest.scanner_findings):
         raise PackageScanBlockedError("blocking scanner findings remain")
+    verify_package_content(manifest, quarantine_root=quarantine_root)
     approved = manifest.model_copy(
         update={
             "trust_state": PackageTrustState.APPROVED,

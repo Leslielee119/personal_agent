@@ -13,6 +13,7 @@ from personal_predictive_ai.skills.models import (
 )
 from personal_predictive_ai.skills.packages import (
     approve_package,
+    package_directory,
     quarantine_local_package,
     scan_package,
 )
@@ -74,7 +75,12 @@ def _approved_skill(tmp_path: Path, *, with_package: bool = False):
             quarantine_root=quarantine_root,
         )
         scan_package(store, manifest.package_id, quarantine_root=quarantine_root)
-        approved = approve_package(store, manifest.package_id, reviewer="reviewer")
+        approved = approve_package(
+            store,
+            manifest.package_id,
+            reviewer="reviewer",
+            quarantine_root=quarantine_root,
+        )
         package_id = approved.package_id
         draft = _draft(source_package_id=package_id)
     record = service.approve_proposal(
@@ -143,4 +149,15 @@ def test_l0_returns_latest_version_only(tmp_path: Path) -> None:
     assert [(item.skill_id, item.version, item.purpose) for item in index] == [
         (version2.skill_id, 2, "Updated purpose")
     ]
+    store.close()
+
+
+def test_l2_rejects_package_modified_after_approval(tmp_path: Path) -> None:
+    store, record, package_root, package_id = _approved_skill(tmp_path, with_package=True)
+    assert package_id is not None
+    tampered = package_directory(package_root, package_id) / "ref.txt"
+    tampered.write_text("tampered after approval\n", encoding="utf-8")
+
+    with pytest.raises(SkillReferenceAccessError):
+        get_skill_reference(store, package_root, record.skill_id, "ref.txt")
     store.close()

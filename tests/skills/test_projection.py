@@ -167,3 +167,20 @@ def test_projection_corruption_fails_closed_without_store_mutation(
         )
     assert _proposal_count(db) == before
     store.close()
+
+
+def test_projection_evidence_summary_is_machine_controlled(tmp_path: Path) -> None:
+    store, service, record = _record(tmp_path)
+    db = tmp_path / "events.db"
+    before = _proposal_count(db)
+    markdown = render_skill_markdown(record).replace("evt-1", "evt-forged", 1)
+
+    with pytest.raises(ProjectionValidationError):
+        proposal_from_projection_edit(
+            service,
+            record,
+            markdown,
+            proposed_by="human",
+        )
+    assert _proposal_count(db) == before
+    store.close()

@@ -13,9 +13,10 @@ from personal_predictive_ai.skills.models import (
     VerificationSpec,
 )
 from personal_predictive_ai.skills.packages import (
+    PackageTamperedError,
     UnsafePackagePathError,
-    package_directory,
     validate_package_reference_path,
+    verify_package_content,
 )
 from personal_predictive_ai.storage.knowledge_skill_store import KnowledgeSkillStore
 
@@ -140,7 +141,10 @@ def get_skill_reference(
     if normalized not in manifest.referenced_files:
         raise SkillReferenceAccessError(reference_path)
 
-    package_dir = package_directory(package_root, manifest.package_id)
+    try:
+        package_dir = verify_package_content(manifest, quarantine_root=package_root)
+    except (PackageTamperedError, UnsafePackagePathError) as exc:
+        raise SkillReferenceAccessError(manifest.package_id) from exc
     target = package_dir / safe_path
     if target.is_symlink() or bool(getattr(target, "is_junction", lambda: False)()):
         raise SkillReferenceAccessError(reference_path)

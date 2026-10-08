@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from personal_predictive_ai.knowledge.models import KnowledgeRecord
+from personal_predictive_ai.knowledge.models import KnowledgeRecord, KnowledgeSourceClass
 from personal_predictive_ai.skills.ids import proposal_id_for, skill_id_for
 from personal_predictive_ai.skills.models import (
     MutationKind,
@@ -63,6 +63,12 @@ class TrustedRegistryService:
         self.store = store
 
     def import_human_knowledge(self, record: KnowledgeRecord) -> KnowledgeRecord:
+        human_sources = {
+            KnowledgeSourceClass.HUMAN_DECLARED,
+            KnowledgeSourceClass.HUMAN_APPROVED_IMPORT,
+        }
+        if record.source_class not in human_sources:
+            raise ValueError("human-origin knowledge source required")
         self.store.put_knowledge(record)
         return record
 

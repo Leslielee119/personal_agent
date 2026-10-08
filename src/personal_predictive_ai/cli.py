@@ -19,6 +19,7 @@ from personal_predictive_ai.runtime.service import CaptureService, ServiceStatus
 from personal_predictive_ai.skills.models import SkillDraft, SkillStatus
 from personal_predictive_ai.skills.packages import (
     PackageScanBlockedError,
+    PackageTamperedError,
     UnsafePackagePathError,
     approve_package,
     quarantine_local_package,
@@ -215,6 +216,7 @@ def _error_code(exc: Exception) -> str:
     mapping = {
         UntrustedSkillPackageError: "untrusted_skill_package",
         PackageScanBlockedError: "package_scan_blocked",
+        PackageTamperedError: "package_tampered",
         UnsafePackagePathError: "unsafe_package_path",
         RiskDowngradeApprovalRequired: "risk_downgrade_requires_approval",
         StaleSkillVersionError: "stale_skill_version",
@@ -295,7 +297,12 @@ def _run_e1_command(args: argparse.Namespace, settings: Settings) -> int:
             manifest = scan_package(store, args.package_id, quarantine_root=quarantine_root)
             _print_json(manifest.model_dump(mode="json"))
         elif args.command == "skill-package-approve":
-            manifest = approve_package(store, args.package_id, reviewer=args.reviewer)
+            manifest = approve_package(
+                store,
+                args.package_id,
+                reviewer=args.reviewer,
+                quarantine_root=quarantine_root,
+            )
             _print_json(manifest.model_dump(mode="json"))
         else:
             raise ValueError(f"unsupported E1 command: {args.command}")
@@ -306,6 +313,7 @@ def _run_e1_command(args: argparse.Namespace, settings: Settings) -> int:
         OSError,
         UntrustedSkillPackageError,
         PackageScanBlockedError,
+        PackageTamperedError,
         UnsafePackagePathError,
         RiskDowngradeApprovalRequired,
         StaleSkillVersionError,

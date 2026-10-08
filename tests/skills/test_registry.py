@@ -2,6 +2,12 @@ from pathlib import Path
 
 import pytest
 
+from personal_predictive_ai.knowledge.models import (
+    KnowledgeRecord,
+    KnowledgeScope,
+    KnowledgeSourceClass,
+    KnowledgeStatus,
+)
 from personal_predictive_ai.skills.models import (
     PackageSourceType,
     PackageTrustState,
@@ -177,4 +183,26 @@ def test_duplicate_create_for_same_skill_id_fails_after_first_approval(tmp_path:
     with pytest.raises(StaleSkillVersionError):
         service.approve_proposal(second.proposal_id, approver="reviewer")
     assert [item.version for item in store.iter_skill_versions(created.skill_id)] == [1]
+    store.close()
+
+
+def test_human_knowledge_import_rejects_non_human_source(tmp_path: Path) -> None:
+    service, store = _service(tmp_path)
+    record = KnowledgeRecord(
+        knowledge_id="kn:ai-proposed",
+        kind="preference",
+        key="editor.theme",
+        value="dark",
+        scope=KnowledgeScope(scope_type="global", scope_id="user"),
+        source_class=KnowledgeSourceClass.AI_PROPOSED,
+        created_at="2026-10-08T00:00:00+00:00",
+        created_seq=1,
+        valid_from=0,
+        confidence=0.5,
+        status=KnowledgeStatus.DRAFT,
+    )
+
+    with pytest.raises(ValueError, match="human-origin"):
+        service.import_human_knowledge(record)
+    assert store.get_knowledge(record.knowledge_id) is None
     store.close()
