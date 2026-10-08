@@ -9,6 +9,9 @@ from typing import Sequence
 
 from personal_predictive_ai.collector.base import Collector, CollectorContext
 from personal_predictive_ai.config import Settings
+from personal_predictive_ai.continuity.brief import ResumeBriefService
+from personal_predictive_ai.continuity.registry import ContinuityRegistry
+from personal_predictive_ai.continuity.state import TaskStateService
 from personal_predictive_ai.diagnostics.memory_replay import derive_b2, iter_b2_replay_lines
 from personal_predictive_ai.diagnostics.state_replay import derive_b1, iter_b1_replay_lines
 from personal_predictive_ai.events.ids import EventFactory
@@ -35,6 +38,7 @@ from personal_predictive_ai.skills.registry import (
     UntrustedSkillPackageError,
 )
 from personal_predictive_ai.skills.retrieval import get_skill_core, list_skill_index
+from personal_predictive_ai.storage.continuity_store import ContinuityStore
 from personal_predictive_ai.storage.derived_store import DerivedStore
 from personal_predictive_ai.storage.knowledge_skill_store import KnowledgeSkillStore
 from personal_predictive_ai.storage.memory_store import MemoryStore
@@ -163,6 +167,18 @@ def build_parser() -> argparse.ArgumentParser:
     _add_capture_args(longitudinal_session)
     longitudinal_session.add_argument("--run-id", default="longitudinal-current")
 
+    continuity_init = subparsers.add_parser("continuity-init")
+    continuity_init.add_argument("--project-key", required=True)
+    continuity_init.add_argument("--workcopy-root", type=Path, required=True)
+    continuity_init.add_argument("--task-title", required=True)
+    continuity_init.add_argument("--goal", default="")
+    continuity_init.add_argument("--last-position", default="")
+    continuity_init.add_argument("--next-step", default="")
+
+    continuity_resume = subparsers.add_parser("continuity-resume")
+    continuity_resume.add_argument("--task-id", required=True)
+    continuity_resume.add_argument("--format", choices=["text", "json"], default="text")
+
     knowledge_import = subparsers.add_parser("knowledge-import")
     knowledge_import.add_argument("--file", type=Path, required=True)
 
@@ -218,6 +234,8 @@ _E1_COMMANDS = {
     "skill-package-scan",
     "skill-package-approve",
 }
+
+_CONTINUITY_COMMANDS = {"continuity-init", "continuity-resume"}
 
 
 def _print_json(value: object) -> None:
@@ -337,6 +355,57 @@ def _run_e1_command(args: argparse.Namespace, settings: Settings) -> int:
         store.close()
 
 
+def _run_continuity_command(args: argparse.Namespace, settings: Settings) -> int:
+    store = ContinuityStore(settings.data_dir / "continuity.db")
+    registry = ContinuityRegistry(store)
+    state = TaskStateService(store)
+    brief_service = ResumeBriefService(store)
+    try:
+        now_ns = time.time_ns()
+        if args.command == "continuity-init":
+            binding = registry.bind(
+                args.project_key,
+                args.workcopy_root,
+                args.task_title,
+                now_ns=now_ns,
+            )
+            snapshot = state.initialize(
+                binding.task.task_id,
+                current_goal=args.goal,
+                last_position=args.last_position,
+                next_step=args.next_step,
+                now_ns=now_ns,
+            )
+            _print_json(
+                {
+                    "project_id": binding.project.project_id,
+                    "workcopy_id": binding.workcopy.workcopy_id,
+                    "task_id": binding.task.task_id,
+                    "snapshot_id": snapshot.snapshot_id,
+                }
+            )
+        elif args.command == "continuity-resume":
+            snapshot = state.build(args.task_id, as_of_ns=now_ns)
+            brief = brief_service.render(snapshot, generated_at_ns=now_ns)
+            if args.format == "json":
+                _print_json(
+                    {
+                        "snapshot": snapshot.model_dump(mode="json"),
+                        "brief": brief.model_dump(mode="json"),
+                    }
+                )
+            else:
+                print(brief_service.render_text(brief))
+        else:
+            raise ValueError(f"unsupported continuity command: {args.command}")
+        return 0
+    except (KeyError, OSError, ValueError) as exc:
+        _print_json({"error": "continuity_error", "detail": str(exc)})
+        return 2
+    finally:
+        store.close()
+
+
 def _run_capture(
     args: argparse.Namespace,
     settings: Settings,
@@ -389,6 +458,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command in _E1_COMMANDS:
         return _run_e1_command(args, settings)
+    if args.command in _CONTINUITY_COMMANDS:
+        return _run_continuity_command(args, settings)
 
     if args.command == "derive-b1":
         summary = derive_b1(settings.data_dir / "events.db", run_id=args.run_id)
