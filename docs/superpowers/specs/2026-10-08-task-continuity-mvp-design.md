@@ -1,7 +1,7 @@
 # Task Continuity MVP — Product Architecture Design
 
 日期：2026-10-08
-状态：Architecture direction approved; five review boundaries integrated; revised written spec pending final user approval
+状态：Final approved design baseline; five review boundaries integrated; implementation planning authorized on 2026-10-08
 定位：PersonalAgent 第一个真实可用产品阶段
 
 ## 1. 产品目标
@@ -683,10 +683,10 @@ Task Continuity MVP 本身不获得这些权限。
 
 ## 23. 下一阶段
 
-本 spec 经用户书面审阅批准后，下一步才进入 implementation planning。
+本 spec 已于 2026-10-08 获得用户最终批准，implementation planning 已授权。
 
 Implementation plan 应优先落 A1→A3，使系统尽快能够在真实 PersonalAgent 项目上 dogfood：识别 project/workcopy/task、首次建档、生成 evidence-grounded snapshot、显示 compact Resume Brief、查看证据、接受纠错与 scoped delete。
 
 A1→A3 的首个端到端验收场景冻结为：**隔天返回 PersonalAgent 的某个工作副本，系统恢复正确任务，明确说明历史验证结果当前是否仍适用，用户可以立即纠错；同一仓库另一 worktree/task 的目标、blocker 和验证结果不得混入。**
 
-在修订 spec 获得最终批准之前，不实现 Task Continuity 产品代码。
+产品代码实施必须等待 implementation plan 完成并获得用户对执行方式的确认。
