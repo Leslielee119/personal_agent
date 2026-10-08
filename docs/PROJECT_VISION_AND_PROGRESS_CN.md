@@ -719,3 +719,31 @@ F  = CLOSED
 ```
 
 Milestone C 的 validity-first 约束没有被绕过：E2 Behavior-to-Skill 仍必须等待足够的跨 session 真实行为证据；当前系统也没有 Skill 自动执行、AI 自动自改或 desktop autonomous execution 权限。
+
+
+## 20. 2026-10-08：C-L Longitudinal Acquisition Qualification
+
+为避免“采了很多数据，但仍然没有可检验的行为多样性”，Milestone C 新增 C-L 纵向采集资格层。
+
+新增命令：
+
+```text
+ppa longitudinal-cycle --run-id longitudinal-current
+```
+
+它在同一个 `events.db` 上执行：
+
+```text
+repeated capture restart
+  -> runtime.restart session boundary
+  -> derive-b1
+  -> C0/readiness
+  -> Application / Operation / Joint distribution
+  -> quantitative deficits
+```
+
+新的 progress 层比原 `longitudinal-status` 更适合采集阶段：只有 raw screening readiness 与 C0 都通过时，才显示 `SCREENING_READY`。因此“5 个 session 但全是 key_input”不会被误判为数据已就绪。
+
+实现与证据：`docs/milestones/MILESTONE_C_LONGITUDINAL_ACQUISITION.md`。
+
+当前冻结真实数据仍只有 1 个 session、182 个 HUMAN_PHYSICAL action，全部为 `chrome.exe / key_input`。Operation/Joint 距 200-target 数量门槛还差 18，但若要把 dominant ratio 压到 0.90 以下，理想情况下至少还需要 21 个非主类 action，并且至少新增 2 个 Operation/Joint 类别；Screening 还差 4 个 session；Confirmatory 还差 7 个 session。

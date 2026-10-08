@@ -51,7 +51,7 @@ class LongitudinalReadinessReport(BaseModel):
     confirmatory_ready_target_spaces: tuple[str, ...] = ()
 
 
-def _read_b1_run(
+def read_b1_run(
     db_path: str | Path,
     source_b1_run_id: str,
 ) -> tuple[int, list[NormalizedAction], list[StateSnapshot], list[SessionSegment]]:
@@ -153,7 +153,7 @@ def audit_longitudinal_status(
     config: PredictionConfigV1 | None = None,
 ) -> LongitudinalReadinessReport:
     cfg = config or PredictionConfigV1()
-    source_high_water, actions, snapshots, sessions = _read_b1_run(
+    source_high_water, actions, snapshots, sessions = read_b1_run(
         db_path,
         source_b1_run_id,
     )

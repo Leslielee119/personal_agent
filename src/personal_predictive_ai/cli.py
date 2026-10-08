@@ -14,6 +14,7 @@ from personal_predictive_ai.diagnostics.state_replay import derive_b1, iter_b1_r
 from personal_predictive_ai.events.ids import EventFactory
 from personal_predictive_ai.knowledge.models import KnowledgeRecord
 from personal_predictive_ai.prediction.benchmark import run_milestone_c
+from personal_predictive_ai.prediction.longitudinal import run_longitudinal_cycle
 from personal_predictive_ai.prediction.readiness import audit_longitudinal_status
 from personal_predictive_ai.runtime.service import CaptureService, ServiceStatus
 from personal_predictive_ai.skills.models import SkillDraft, SkillStatus
@@ -150,6 +151,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     longitudinal_parser = subparsers.add_parser("longitudinal-status")
     longitudinal_parser.add_argument("--source-b1-run-id", required=True)
+
+    longitudinal_cycle = subparsers.add_parser("longitudinal-cycle")
+    longitudinal_cycle.add_argument("--run-id", default="longitudinal-current")
 
     knowledge_import = subparsers.add_parser("knowledge-import")
     knowledge_import.add_argument("--file", type=Path, required=True)
@@ -380,6 +384,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = audit_longitudinal_status(
             settings.data_dir / "events.db",
             source_b1_run_id=args.source_b1_run_id,
+        )
+        print(json.dumps(report.model_dump(mode="json"), sort_keys=True))
+        return 0
+
+    if args.command == "longitudinal-cycle":
+        report = run_longitudinal_cycle(
+            settings.data_dir / "events.db",
+            run_id=args.run_id,
         )
         print(json.dumps(report.model_dump(mode="json"), sort_keys=True))
         return 0
