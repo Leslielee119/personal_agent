@@ -131,7 +131,7 @@ Fresh verification on the implementation worktree:
 
 ```text
 pytest -q -rs
-266 passed, 2 skipped, 2 warnings
+267 passed, 1 skipped, 2 warnings
 
 ruff check .
 All checks passed!
@@ -140,7 +140,7 @@ git diff --check
 PASS
 ```
 
-两个 skip 均有明确环境原因：`test_windows_native_input_and_uia_smoke` 本轮没有真实 physical input，OpenAdapt 按设计过滤 injected input；`test_quarantine_rejects_symlink_or_junction_escape` 在当前 Windows host 无法创建 symlink 测试夹具。实现仍显式检查 symlink 与 junction，且 rooted/absolute/traversal 非跳过测试通过。
+唯一 skip 有明确环境原因：`test_quarantine_rejects_symlink_or_junction_escape` 在当前 Windows host 无法创建 symlink 测试夹具。实现仍显式检查 symlink 与 junction，且 rooted/absolute/traversal 非跳过测试通过。`test_windows_native_input_and_uia_smoke` 在本轮 fresh verification 中实际通过；若验证期间没有真实 physical input，该测试会按设计 skip，因为 OpenAdapt 会过滤 injected input。
 
 冻结结论：
 
