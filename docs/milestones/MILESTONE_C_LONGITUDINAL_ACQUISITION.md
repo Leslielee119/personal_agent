@@ -158,3 +158,21 @@ git diff --check: PASS
 ```
 
 两个 skip 均为环境型：验证期间没有真实 physical input；当前 Windows host 无法创建 symlink 测试夹具。
+## 8. 正式 longitudinal primary 初始化
+
+2026-10-08 已将冻结的真实 B2 qualification 数据库复制为长期行为主库：
+
+```text
+source:
+E:\Experiment\personal-predictive-ai-runtime\captures\2026-10-07-b2-qualification\events.db
+
+primary:
+E:\Experiment\personal-predictive-ai-runtime\longitudinal\primary\events.db
+```
+
+复制前后 SHA-256 均为：
+`0961EC1EADF1C2402F27FAFDA3F3CBA9E6F835AD778D72EB5B5DF42B161B78DF`。
+
+随后仅在 primary 上运行 `longitudinal-cycle`，冻结 source 不再写入。primary 的初始正式状态为：1 session、182 HUMAN_PHYSICAL actions、source high-water 391；Application=`chrome.exe` 单类，Operation=`key_input` 单类。
+
+运行时目录保存 `acquisition_manifest.json`，明确要求同一数据库持续追加、只使用自然行为、不允许人为刷动作过 Gate，并显式排除 soak/smoke 数据。由此还需要新增 4 个自然 session 才进入 Screening，新增 7 个自然 session 才达到 8-session Confirmatory 数量门槛。

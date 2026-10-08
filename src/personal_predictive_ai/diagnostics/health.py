@@ -209,6 +209,18 @@ def build_health_report(
     provider_errors = status.get("provider_errors", {})
     if not isinstance(provider_errors, dict):
         provider_errors = {"status_parse": "provider_errors was not an object"}
+
+    raw_bus_errors = status.get("bus_errors")
+    bus_errors = (
+        raw_bus_errors
+        if isinstance(raw_bus_errors, int)
+        and not isinstance(raw_bus_errors, bool)
+        and raw_bus_errors >= 0
+        else None
+    )
+    raw_offline_mode = status.get("offline_mode")
+    offline_mode = raw_offline_mode if isinstance(raw_offline_mode, bool) else None
+
     raw_artifacts = _raw_inventory(
         root / "raw",
         now_ns=time.time_ns() if now_ns is None else now_ns,
@@ -229,5 +241,7 @@ def build_health_report(
         "raw_bytes": raw_artifacts["bytes"],
         "raw_artifacts": raw_artifacts,
         "provider_errors": provider_errors,
+        "bus_errors": bus_errors,
+        "offline_mode": offline_mode,
         **resources,
     }
