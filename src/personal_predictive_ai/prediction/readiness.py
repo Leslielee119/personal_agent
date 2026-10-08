@@ -105,7 +105,7 @@ def _target_readiness(
         target_space=target_space,
     )
     folds = build_session_forward_folds(examples)
-    validity = audit_validity(examples, folds, config)
+    validity = audit_validity(examples, folds, config, target_space=target_space)
     independent_test_sessions = len(
         {session_id for fold in folds for session_id in fold.test_session_ids}
     )

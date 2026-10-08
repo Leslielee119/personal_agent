@@ -114,6 +114,18 @@ def _collector_factory(
     return build
 
 
+def _add_capture_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--duration", type=float, default=None)
+    parser.add_argument("--stop-file", type=Path, default=None)
+    parser.add_argument("--watch-root", type=Path, action="append", default=[])
+    parser.add_argument(
+        "--openadapt",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="enable native keyboard/mouse/UIA plus event-driven screen capture",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ppa")
     parser.add_argument("--data-dir")
@@ -121,15 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     capture = subparsers.add_parser("capture")
-    capture.add_argument("--duration", type=float, default=None)
-    capture.add_argument("--stop-file", type=Path, default=None)
-    capture.add_argument("--watch-root", type=Path, action="append", default=[])
-    capture.add_argument(
-        "--openadapt",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="enable native keyboard/mouse/UIA plus event-driven screen capture",
-    )
+    _add_capture_args(capture)
 
     derive = subparsers.add_parser("derive-b1")
     derive.add_argument("--run-id", required=True)
@@ -154,6 +158,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     longitudinal_cycle = subparsers.add_parser("longitudinal-cycle")
     longitudinal_cycle.add_argument("--run-id", default="longitudinal-current")
+
+    longitudinal_session = subparsers.add_parser("longitudinal-session")
+    _add_capture_args(longitudinal_session)
+    longitudinal_session.add_argument("--run-id", default="longitudinal-current")
 
     knowledge_import = subparsers.add_parser("knowledge-import")
     knowledge_import.add_argument("--file", type=Path, required=True)
@@ -329,6 +337,51 @@ def _run_e1_command(args: argparse.Namespace, settings: Settings) -> int:
         store.close()
 
 
+def _run_capture(
+    args: argparse.Namespace,
+    settings: Settings,
+    factory: EventFactory,
+) -> dict[str, object]:
+    watch_roots = tuple(Path(path).resolve() for path in args.watch_root)
+    service = CaptureService(
+        settings=settings,
+        collectors=[],
+        event_factory=factory,
+        collector_factory=_collector_factory(
+            use_openadapt=args.openadapt,
+            watch_roots=watch_roots,
+        ),
+    )
+    try:
+        service.start()
+        now = time.monotonic()
+        deadline = None if args.duration is None else now + max(0.0, args.duration)
+        maintenance_period = max(1.0, min(30.0, settings.raw_ttl_seconds / 4.0))
+        next_raw_maintenance = now + maintenance_period
+        structured_maintenance_period = 300.0
+        next_structured_maintenance = now + structured_maintenance_period
+        while deadline is None or time.monotonic() < deadline:
+            if args.stop_file is not None and args.stop_file.exists():
+                break
+            now = time.monotonic()
+            if now >= next_raw_maintenance:
+                service.expire_raw()
+                next_raw_maintenance = now + maintenance_period
+            if now >= next_structured_maintenance:
+                service.expire_structured_short()
+                next_structured_maintenance = now + structured_maintenance_period
+            time.sleep(0.05)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        service.expire_raw()
+        service.expire_structured_short()
+        service.stop()
+        payload = _status_payload(service.status(), offline_mode=settings.offline_mode)
+        service.close()
+    return payload
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = _settings_from_args(args)
@@ -396,6 +449,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(report.model_dump(mode="json"), sort_keys=True))
         return 0
 
+    if args.command == "capture":
+        payload = _run_capture(args, settings, factory)
+        print(json.dumps(payload, sort_keys=True))
+        return 0
+
+    if args.command == "longitudinal-session":
+        capture_payload = _run_capture(args, settings, factory)
+        report = run_longitudinal_cycle(
+            settings.data_dir / "events.db",
+            run_id=args.run_id,
+        )
+        print(
+            json.dumps(
+                {
+                    "capture": capture_payload,
+                    "longitudinal": report.model_dump(mode="json"),
+                },
+                sort_keys=True,
+            )
+        )
+        return 0
+
     if args.command == "status":
         service = CaptureService(settings=settings, collectors=[], event_factory=factory)
         try:
@@ -413,45 +488,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             service.close()
         return 0
 
-    watch_roots = tuple(Path(path).resolve() for path in args.watch_root)
-    service = CaptureService(
-        settings=settings,
-        collectors=[],
-        event_factory=factory,
-        collector_factory=_collector_factory(
-            use_openadapt=args.openadapt,
-            watch_roots=watch_roots,
-        ),
-    )
-    try:
-        service.start()
-        now = time.monotonic()
-        deadline = None if args.duration is None else now + max(0.0, args.duration)
-        maintenance_period = max(1.0, min(30.0, settings.raw_ttl_seconds / 4.0))
-        next_raw_maintenance = now + maintenance_period
-        structured_maintenance_period = 300.0
-        next_structured_maintenance = now + structured_maintenance_period
-        while deadline is None or time.monotonic() < deadline:
-            if args.stop_file is not None and args.stop_file.exists():
-                break
-            now = time.monotonic()
-            if now >= next_raw_maintenance:
-                service.expire_raw()
-                next_raw_maintenance = now + maintenance_period
-            if now >= next_structured_maintenance:
-                service.expire_structured_short()
-                next_structured_maintenance = now + structured_maintenance_period
-            time.sleep(0.05)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        service.expire_raw()
-        service.expire_structured_short()
-        service.stop()
-        payload = _status_payload(service.status(), offline_mode=settings.offline_mode)
-        service.close()
-    print(json.dumps(payload))
-    return 0
+    raise ValueError(f"unsupported command: {args.command}")
 
 
 if __name__ == "__main__":

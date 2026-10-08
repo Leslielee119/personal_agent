@@ -523,7 +523,7 @@ def run_milestone_c(
             for example in examples
         ]
         folds = build_session_forward_folds(examples)
-        validity = audit_validity(examples, folds, cfg)
+        validity = audit_validity(examples, folds, cfg, target_space=target_space)
         key = target_space.value
         target_spaces_manifest[key] = {
             "example_count": len(examples),
