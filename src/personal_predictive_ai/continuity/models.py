@@ -131,6 +131,18 @@ class VerifiedResultRecord(_FrozenModel):
     applicability: ApplicabilityStatus = ApplicabilityStatus.CURRENT
 
 
+class GitWorkCopyState(_FrozenModel):
+    schema_version: Literal["ppa.continuity-git-state/v1"] = "ppa.continuity-git-state/v1"
+    workcopy_id: str = Field(min_length=1)
+    head_commit: str = Field(min_length=1)
+    branch_hint: str = Field(min_length=1)
+    is_dirty: bool
+    tracked_diff_digest: str = Field(min_length=1)
+    untracked_digest: str = Field(min_length=1)
+    code_state_fingerprint: str = Field(min_length=1)
+    observed_at_ns: int = Field(ge=0)
+
+
 class TaskSnapshot(_FrozenModel):
     schema_version: Literal["ppa.continuity-snapshot/v1"] = "ppa.continuity-snapshot/v1"
     snapshot_id: str = Field(min_length=1)
