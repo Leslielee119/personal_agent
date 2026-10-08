@@ -88,13 +88,21 @@ def field_version_id_for(
     )
 
 
-def snapshot_id_for(task_id: str, captured_at_ns: int, field_version_ids: list[str]) -> str:
+def snapshot_id_for(
+    task_id: str,
+    captured_at_ns: int,
+    field_version_ids: list[str],
+    verified_result_ids: list[str] | None = None,
+    code_state_fingerprint: str | None = None,
+) -> str:
     return _stable_id(
         "snapshot",
         {
             "task_id": task_id,
             "captured_at_ns": captured_at_ns,
             "field_version_ids": field_version_ids,
+            "verified_result_ids": verified_result_ids or [],
+            "code_state_fingerprint": code_state_fingerprint,
         },
     )
 

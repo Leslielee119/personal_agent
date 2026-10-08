@@ -143,6 +143,16 @@ class GitWorkCopyState(_FrozenModel):
     observed_at_ns: int = Field(ge=0)
 
 
+class FieldConflict(_FrozenModel):
+    schema_version: Literal["ppa.continuity-field-conflict/v1"] = (
+        "ppa.continuity-field-conflict/v1"
+    )
+    field_name: str = Field(min_length=1)
+    field_version_ids: list[str] = Field(min_length=2)
+    evidence_ids: list[str] = Field(default_factory=list)
+    values: list[Any] = Field(min_length=2)
+
+
 class TaskSnapshot(_FrozenModel):
     schema_version: Literal["ppa.continuity-snapshot/v1"] = "ppa.continuity-snapshot/v1"
     snapshot_id: str = Field(min_length=1)
@@ -159,7 +169,8 @@ class TaskSnapshot(_FrozenModel):
     field_version_ids: list[str] = Field(default_factory=list)
     evidence_ids: list[str] = Field(default_factory=list)
     verified_result_ids: list[str] = Field(default_factory=list)
-    conflicts: list[dict[str, Any]] = Field(default_factory=list)
+    verification_applicability: dict[str, ApplicabilityStatus] = Field(default_factory=dict)
+    conflicts: list[FieldConflict] = Field(default_factory=list)
 
 
 class ResumeBriefRecord(_FrozenModel):

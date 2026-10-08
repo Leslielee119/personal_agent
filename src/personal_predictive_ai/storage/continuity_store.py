@@ -83,7 +83,7 @@ class ContinuityStore:
 
     def add_evidence(self, item: EvidenceRecord) -> None:
         self._insert(
-            "INSERT INTO continuity_evidence("
+            "INSERT OR IGNORE INTO continuity_evidence("
             "evidence_id, project_id, workcopy_id, task_id, available_at_ns, data_json) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (
@@ -163,6 +163,29 @@ class ContinuityStore:
 
     def get_snapshot(self, snapshot_id: str) -> TaskSnapshot | None:
         return self._get("continuity_snapshots", "snapshot_id", snapshot_id, TaskSnapshot)
+
+    def get_verified_result(self, result_id: str) -> VerifiedResultRecord | None:
+        return self._get(
+            "continuity_verified_results", "result_id", result_id, VerifiedResultRecord
+        )
+
+    def iter_verified_results(
+        self, task_id: str, *, as_of_ns: int | None = None
+    ) -> Iterator[VerifiedResultRecord]:
+        clauses = ["task_id = ?"]
+        params: list[object] = [task_id]
+        if as_of_ns is not None:
+            clauses.append("observed_at_ns <= ?")
+            params.append(as_of_ns)
+        sql = (
+            "SELECT data_json FROM continuity_verified_results WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY observed_at_ns ASC, result_id ASC"
+        )
+        with self._lock:
+            rows = self._conn.execute(sql, tuple(params)).fetchall()
+        for row in rows:
+            yield self._decode(str(row["data_json"]), VerifiedResultRecord)
 
     def iter_evidence(
         self,
