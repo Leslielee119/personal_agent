@@ -1,0 +1,1 @@
+"""Canonical personal knowledge models."""
