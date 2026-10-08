@@ -1,7 +1,7 @@
 # Task Continuity MVP — Product Architecture Design
 
 日期：2026-10-08
-状态：Design approved in chat; written spec pending user review
+状态：Architecture direction approved; five review boundaries integrated; revised written spec pending final user approval
 定位：PersonalAgent 第一个真实可用产品阶段
 
 ## 1. 产品目标
@@ -30,8 +30,8 @@ MVP 不以论文指标或模型复杂度作为成功标准，而以真实使用�
 3. 系统不确定时能够明确输出 UNKNOWN，而不是补全故事；
 4. 用户可以在几秒内纠正目标、blocker、pending item 或已失效决定；
 5. Brief 中关键陈述可以展开查看 evidence；
-6. 系统默认只读，不自动修改代码、执行命令或操作外部服务；
-7. 项目之间的状态和记忆不会串线；
+6. Phase A 只允许读取已登记范围内的项目状态，并写入 PersonalAgent 自己的状态库、纠错记录和必要缓存；项目观察必须通过固定、可审计的只读适配器完成。模型输出不能进入任意命令执行路径，不能修改项目文件、启动测试或构建、操作界面或访问外部服务；
+7. 项目、工作副本与任务之间的状态和记忆不会串线；
 8. 用户在实际使用中主观认为恢复上下文比自己重新回忆更省事。
 
 内部可以测 task recovery accuracy、stale-memory misuse、unsupported assertion 等指标，但这些指标服务于产品质量，不反过来定义产品价值。
@@ -81,32 +81,52 @@ Suggestion  = 面向用户的候选下一步
 ```
 
 三者不可共用同一 truth status。
-## 5. Project Detection
+## 5. Project / WorkCopy / Task Detection
 
-系统首先必须知道“当前属于哪个项目”，否则长期记忆无法安全隔离。
+系统首先必须知道“当前属于哪个项目、哪个工作副本、哪个任务”，否则长期记忆无法安全隔离。
 
-V1 ProjectIdentity 建议至少包含：
+V1 必须把项目身份、工作副本身份和当前任务身份分开。
 
 ```text
-project_id
-canonical_root
-aliases
-repo_identity
-workspace_markers
-created_at
-last_seen_at
-status
+ProjectIdentity
+  project_id
+  repo_identity / project_fingerprint
+  shared_constraints
+  created_at
+  last_seen_at
+  status
+
+WorkCopyIdentity
+  workcopy_id
+  project_id
+  canonical_root
+  aliases
+  vcs_branch_or_revision_hint
+  workspace_markers
+  created_at
+  last_seen_at
+  status
+
+TaskIdentity
+  task_id
+  project_id
+  workcopy_id?          # 可空：任务可跨工作副本，但 V1 默认绑定一个工作副本
+  title
+  created_at
+  status
 ```
 
 项目识别优先使用可核验信号：Git root、已登记 workspace root、项目配置文件、IDE workspace、用户显式绑定。
 
-仅凭窗口标题或目录名相似不能自动合并项目。
+仅凭窗口标题、目录名相似或 Git branch 名不能自动合并项目或永久定义任务身份。
 
-如果多个项目候选无法确定，必须返回 UNKNOWN / AMBIGUOUS，并允许用户一次性绑定。
+如果 project / workcopy / task 候选无法确定，必须返回 UNKNOWN / AMBIGUOUS，并允许用户手动选择或绑定。
 
-同一项目可以存在多个路径 alias，但 canonical project_id 必须稳定。
+同一 Project 可以有多个 WorkCopy，例如主仓库和 git worktree。它们共享稳定 `project_id`，但拥有不同 `workcopy_id`；当前目标、blocker、验证结果和局部 pending item 默认属于 task/workcopy scope，不得因为属于同一 repo 自动合并。
 
-Task State、Memory、Resume Brief 和未来 Skill 默认全部以 project scope 隔离。
+只有明确声明为 project-shared 的约束或知识才允许跨工作副本复用；无法确定归属时不自动上提到 project scope。
+
+V1 不建设完整任务管理系统：第一版允许用户手动选择当前 Task，并将其绑定到当前 WorkCopy。Task State、Resume Brief 和任务级 Memory 默认至少按 `project_id + workcopy_id + task_id` 隔离。
 ## 6. Task State
 
 Task State 是 Phase A 的核心新增对象，不等同于低层 action sequence。
@@ -117,6 +137,9 @@ V1 建议：
 TaskSnapshot
   snapshot_id
   project_id
+  workcopy_id
+  task_id
+  episode_id?           # A1-A3 可空；A4 引入 WorkEpisode 后再绑定
   captured_at / source_high_water
   active_artifacts
   current_goal
@@ -150,17 +173,44 @@ UNKNOWN        当前无法支持
 
 使用规则：
 
-- OBSERVED / USER_DECLARED / DERIVED 可以形成高信任 Brief 事实；
-- INFERRED 必须在 UI 上可区分，且不能覆盖更高信任来源；
+- provenance 只回答“这条信息如何得知”，不能被解释成概率意义上的可信度排序；
+- validity / applicability 独立回答“这条信息当前是否仍适用”；
+- OBSERVED / USER_DECLARED / DERIVED 可以进入 Brief，但其适用范围仍必须由各自 evidence scope 决定；
+- INFERRED 必须在 UI 上可区分，且不能覆盖冲突的直接证据或用户声明；
+- USER_DECLARED 与 OBSERVED 冲突时保留冲突本身，不通过固定 provenance 排序静默覆盖；由字段语义、时间和用户纠错决定当前展示；
 - UNKNOWN 不允许被生成器自动补全；
-- 任何字段更新必须保留 evidence_refs；
-- 新状态不能物理删除旧状态，而应通过 supersession / invalidation 关闭旧有效区间。
+- 任何字段更新必须保留 evidence_refs、validity/applicability 和 scope；
+- 普通状态更新不物理删除旧版本，而应通过 supersession / invalidation 关闭旧有效区间；用户显式删除属于第 15 节定义的例外。
 
 这直接复用 B2 的 temporal validity、dependency、supersession 和 evidence 语义。
 
 ### 6.2 Verified result
 
 `last_verified_result` 只允许来自可核验结果，例如测试退出码、构建结果、Git 状态、明确文件变化或用户确认。
+
+验证结果必须显式绑定适用范围，而不是只保存一句“tests passed”。至少记录：
+
+```text
+VerifiedResult
+  result_id
+  project_id
+  workcopy_id
+  task_id?
+  check_kind
+  command_or_adapter_scope
+  environment_fingerprint
+  code_state_fingerprint
+  observed_at
+  outcome
+  evidence_refs
+  applicability_status
+```
+
+`code_state_fingerprint` 不能只等于 commit：存在未提交修改时必须把 dirty state / relevant diff fingerprint 纳入适用性判断。
+
+后续发生相关代码、配置、依赖或环境变化时，历史验证结果仍保留，但当前 `applicability_status` 应变为 `STALE / NEEDS_REVALIDATION`，Brief 不得继续把它写成“当前仍通过”。
+
+用户声明“测试通过”支持的是 `USER_DECLARED` 的测试结果；观察到退出码支持的是对应命令与环境范围内的 `OBSERVED/DERIVED` 结果。两者来源不同，不能互相伪装。
 
 LLM 文字“看起来修好了”不能成为 VERIFIED RESULT。
 ## 7. Resume Brief
@@ -169,22 +219,24 @@ Resume Brief 是 Phase A 的第一个直接用户界面能力。
 
 触发条件 V1：
 
-- 用户重新进入一个已识别项目；
-- 距该项目最近一次活跃超过可配置阈值；
-- 或用户主动请求“恢复这个项目”。
+- A1-A3：用户主动选择已登记的 project/workcopy/task 并请求恢复；
+- A4+：系统可靠识别用户重新进入某个已登记 workcopy/task，且距该任务最近一次自然工作超过可配置阈值；
+- identity 不明确时只提示选择，不自动拼接多个 task 的 Brief。
 
-默认卡片结构：
+默认卡片只展示恢复工作最需要的四项：
 
 ```text
-项目 / 最近工作时间
-当前目标
-上次已验证结果
-仍未完成
-当前 blocker
-有效约束
-建议继续步骤
-不确定项
+当前任务
+上次停在哪里
+需要注意的未解决事项或状态变化
+建议继续的一步
 ```
+
+缺少某项时直接省略，不显示一排 UNKNOWN。最近验证详情、完整约束、不确定项和证据进入展开视图。
+
+“未解决事项”只包含确实影响当前 task/workcopy 继续推进的 blocker、pending item 或状态变化；研究风险、项目总览和与当前任务无直接关系的技术债不得默认塞入 Brief。
+
+任何“最近验证”都必须同时显示 applicability；历史 PASS 但当前 `STALE / NEEDS_REVALIDATION` 时，应写成“上次通过，当前状态尚未复验”，不能简化成“通过”。
 
 每个关键条目都必须支持“查看证据”。
 
@@ -197,17 +249,30 @@ Brief 默认只读，不自动执行建议步骤。
 
 用户纠错是产品能力，不是异常路径。
 
-V1 至少支持：
+V1 至少支持两类输入。
+
+首次建档 / 新任务初始化：
+
+```text
+“当前任务是 X”
+“当前目标是 Y”
+“我已经做到 Z”
+“下一步准备做 N”
+```
+
+对已有状态的纠错：
 
 ```text
 “当前目标已经改成 X”
 “这个 blocker 已解决”
 “这条约束已经失效”
 “不要再使用这条信息”
-“这个项目不是你识别的那个项目”
+“这个项目 / 工作副本 / 任务不是你识别的那个”
 ```
 
-纠错不能直接覆盖 canonical history。
+首次建档不是“修改一个不存在的字段”，而是创建明确的 `USER_DECLARED` TaskIdentity / Task State evidence，使 A1 在没有 LLM 和长期历史时也能立即形成可用恢复状态。
+
+普通纠错不能直接覆盖 canonical history；用户显式删除按第 12/15 节的 privacy-first 删除语义处理，是历史保留规则的明确例外。
 
 推荐流程：
 
@@ -283,6 +348,9 @@ source_ref
 observed_at
 available_at
 project_id
+workcopy_id?
+task_id?
+scope
 provenance
 integrity / hash where applicable
 ```
@@ -290,6 +358,8 @@ integrity / hash where applicable
 `observed_at` 与 `available_at` 必须可区分，为未来处理“事实什么时候成立”与“系统什么时候知道”保留语义。
 
 Phase A 不要求所有 evidence 都长期保存原始内容；可以只保留结构化摘要、hash 和 canonical reference，继续遵守 raw TTL / privacy policy。
+
+项目观察只能通过登记过的 observation adapter。适配器可以采用库 API，也可以封装固定的只读 Git/文件系统查询命令，但必须使用固定参数面、禁止模型自由拼接命令，并避免触发项目 hook、脚本、构建或其他副作用。所有 adapter 输出作为 evidence 进入同一 provenance / scope / integrity 体系。
 ## 11. LLM 边界
 
 LLM 在 Phase A 中是解释器和生成器，不是 canonical database。
@@ -318,11 +388,15 @@ Task Continuity 应复用现有 append-only / temporal design，而不是维护�
 
 ```text
 ProjectRecord
+WorkCopyRecord
+TaskRecord
 EvidenceRecord
+VerifiedResultRecord
 TaskStateFieldVersion
 TaskSnapshot
 ResumeBriefRecord
 CorrectionRecord
+DeletionTombstoneRecord
 ```
 
 `TaskSnapshot` 是某个 source_high_water / as_of 时刻的 materialized view（物化视图），不是覆盖历史的 mutable row。
@@ -331,42 +405,50 @@ CorrectionRecord
 
 Resume Brief 必须记录它基于哪个 snapshot 和 evidence set 生成，以便之后解释“为什么当时这么说”。
 
-用户纠错后的新 Brief 不修改旧 Brief；旧 Brief 保留为审计记录，但默认 UI 只显示当前有效版本。
+普通纠错后的新 Brief 不修改旧 Brief；旧 Brief 保留为审计记录，但默认 UI 只显示当前有效版本。
+
+用户显式删除是 append-only 历史保留规则的例外。删除请求优先于审计便利性：被删除的敏感内容必须从 canonical evidence content、派生 Task State 字段、旧 Brief、检索索引和必要缓存中清除。若系统必须保留审计痕迹，只允许保留不包含被删除内容的最小 tombstone（例如删除发生时间、范围和不可逆状态），不得通过旧版本或 cache 恢复原内容。
 ## 13. UI / Interaction Surface
 
-Phase A 不先做复杂桌面应用，先做最小可用面板。
+Phase A 不先做复杂桌面应用，但 A1 就必须提供可直接使用的最小交互入口，不能等到 A6 才让用户看到产品。
 
-推荐三个入口：
+A1 至少提供：
 
 ```text
-Resume Brief
+Select / Bind Project + WorkCopy + Task
+Create / Update Task Note
+Open Resume Brief
+```
+
+A3 增加：
+
+```text
 Correct State
 View Evidence
+Delete / Forget scoped information
 ```
+
+这些入口可以先是本地 CLI/TUI 或极简面板；A6 才负责桌面常驻、自动唤起和视觉体验完善。
 
 默认 Resume Brief 示例：
 
 ```text
-PersonalAgent — personal_agent
-上次工作：昨天 18:40
+PersonalAgent — personal_agent / task-continuity-spec
 
-目标
-继续 Task Continuity MVP
+当前任务
+冻结 Task Continuity MVP 架构
 
-最近验证
-pytest 274 passed / 2 skipped
+上次停在
+Astra 审阅完成，等待补齐 5 个边界后进入 implementation planning
 
-未完成
-• formal 8h soak
-• Task State implementation
-
-阻碍 / 风险
-• 当前 action abstraction 仍偏低层
+需要注意
+• formal 8h soak 仍在运行
 
 建议继续
-1. 检查 soak 结果
-2. 继续 Task State
+补齐 spec 边界并重新审阅
 ```
+
+最近验证、完整约束、不确定项和证据放在展开视图；与当前任务无直接推进关系的研究风险不进入默认卡片。
 
 每个条目需要能够展开来源；INFERRED / SUGGESTED 项应有视觉区分。
 ## 14. 与现有模块的关系
@@ -407,25 +489,40 @@ V1 默认：
 - 项目状态只在本机 canonical store 中持久化；
 - 后续若接入远程模型，必须单独定义最小化上下文出口和显式策略，本 spec 不默认允许上传完整事件历史。
 
-TaskSnapshot 与 ResumeBrief 属于长期个人数据，应支持项目级清除和用户纠错语义。
+TaskSnapshot 与 ResumeBrief 属于长期个人数据，应支持至少 project / workcopy / task / evidence-scope 的定向清除，而不是只能整项目删除。
 
-“删除原始来源”与“使记忆失效”需要独立处理；如果来源被删除，派生状态不能继续假装拥有完整证据链。
+需要区分三类状态：
+
+```text
+EXPIRED_BY_TTL       原始材料按保留策略自然过期
+USER_DELETED         用户主动要求删除内容
+INTEGRITY_INVALID    内容仍应存在但完整性校验失败
+```
+
+三者不能共用一个“missing evidence”状态。TTL 过期后可以继续保留此前允许持久化的结构化事实，但必须明确其原始材料不可再查看；用户删除则要求按第 12 节清除被删除内容及可反推出该内容的派生物；integrity failure 必须 fail-closed，不得继续把受影响证据当作可靠来源。
+
+Hash 只用于一致性/完整性检查，不能替代已经删除的证据内容，也不能因为“hash 还在”就声称原陈述仍有完整证据链。
+
+每条派生 Task State 还必须单独判断剩余结构化 evidence 是否足以支持该陈述；若不足，应降为 `UNSUPPORTED / NEEDS_RECONFIRMATION` 或从当前 Brief 移除。
 ## 16. MVP 验收标准
 
 Phase A V1 只有满足以下条件才称为“可用 MVP”：
 
-1. 至少能登记和稳定识别多个 project；
-2. 每个 project 的 Task State 完全隔离；
-3. TaskSnapshot 可从 evidence 重建并具有稳定 ID / version；
-4. Resume Brief 可以在无 LLM 情况下展示 deterministic core；
-5. LLM 推断与事实在 schema 和 UI 上均可区分；
-6. 至少支持 goal / blocker / pending item / constraint 的用户纠错；
-7. 纠错产生 supersession，而不是覆盖历史；
-8. 旧约束失效后，新 Brief 不再使用旧约束；
-9. 每条关键 Brief statement 均可追溯 evidence；
-10. 项目重新进入时能够触发或手动生成 Resume Brief；
-11. 默认路径没有自动执行副作用；
-12. 现有 A/B1/B2 数据与 privacy tests 不回归。
+1. 至少能登记和稳定识别多个 project，并区分同一 project 的多个 workcopy；
+2. task/workcopy 状态严格隔离；无法确定归属时不自动合并；
+3. 用户可以手动选择/绑定当前 task，并在首次使用时直接录入“当前目标、做到哪里、下一步”；
+4. A1 就存在手动打开 Resume Brief 的可用入口，A3 就存在纠错与证据查看入口；
+5. TaskSnapshot 在没有 WorkEpisode 的 A1-A3 阶段即可按 project + workcopy + task + time boundary 重建，并具有稳定 ID / version；
+6. Resume Brief 可以在无 LLM 情况下展示 deterministic core；
+7. LLM 推断与事实在 schema 和 UI 上均可区分；
+8. 至少支持 goal / blocker / pending item / constraint 的用户纠错；
+9. 普通纠错产生 supersession，而不是覆盖历史；用户显式删除则按删除语义清除内容；
+10. 旧约束或过期验证结果失效后，新 Brief 不再把它们表述为当前有效；
+11. 每条关键 Brief statement 均可追溯 evidence 及其 applicability；
+12. 同一 repo 的另一 worktree/task 的目标、blocker 和验证结果不会混入当前 Brief；
+13. A4 后项目重新进入可以自动触发；A1-A3 至少支持手动生成 Resume Brief；
+14. Phase A 只执行已登记的只读 observation adapter，并只写 PersonalAgent 自身状态；模型输出没有项目副作用执行路径；
+15. 现有 A/B1/B2 数据与 privacy tests 不回归。
 
 产品 dogfood（自用）门槛：至少连续用于真实项目恢复，并记录错误恢复、漏项、过期信息误用和人工纠正次数。
 
@@ -440,6 +537,8 @@ Phase A V1 只有满足以下条件才称为“可用 MVP”：
 WorkEpisode
   episode_id
   project_id
+  workcopy_id
+  task_id
   started_at
   ended_at
   evidence_range
@@ -452,7 +551,9 @@ WorkEpisode
 
 V1 episode boundary 可以先由项目切换、长时间 inactive 和用户显式结束共同形成，并允许 UNKNOWN / uncertain boundary。
 
-TaskSnapshot 与 Resume Brief 应主要基于 project + WorkEpisode，而不是简单 session_id。
+A1-A3 不依赖 WorkEpisode：在这一阶段，TaskSnapshot 与 Resume Brief 使用 `project + workcopy + task + explicit/as_of time boundary` 恢复状态。
+
+A4 引入 WorkEpisode 后，再把自然工作段作为辅助边界加入恢复逻辑；WorkEpisode 永远不能替代 project/workcopy/task identity，也不能退化为简单 session_id。
 
 这也为未来长期评估提供更真实的依赖单位，但 Phase A 首要用途是产品状态恢复。
 ## 18. 组件边界
@@ -461,22 +562,26 @@ Phase A 建议固定以下服务边界：
 
 ```text
 ProjectResolver
+WorkCopyResolver
+TaskSelector
 EvidenceAssembler
-WorkEpisodeBuilder
 TaskStateBuilder
 ResumeBriefService
 CorrectionService
+WorkEpisodeBuilder   # A4+
 ```
 
 语义接口：
 
 ```text
 ProjectResolver.resolve(observation) -> ProjectResolution
-EvidenceAssembler.build(project_id, as_of) -> EvidenceSet
-WorkEpisodeBuilder.update(project_id, evidence) -> WorkEpisode
-TaskStateBuilder.build(project_id, episode_id, evidence, as_of) -> TaskSnapshot
-ResumeBriefService.render(snapshot_id) -> ResumeBrief
-CorrectionService.apply(user_correction) -> new evidence + supersession
+WorkCopyResolver.resolve(project_id, observation) -> WorkCopyResolution
+TaskSelector.select_or_create(project_id, workcopy_id, user_input?) -> TaskIdentity
+EvidenceAssembler.build(project_id, workcopy_id, task_id, as_of) -> EvidenceSet
+TaskStateBuilder.build(project_id, workcopy_id, task_id, evidence, as_of, episode_id=None) -> TaskSnapshot
+ResumeBriefService.render(snapshot_id, mode="compact") -> ResumeBrief
+CorrectionService.apply(user_correction_or_initial_note) -> new evidence + supersession/deletion effect
+WorkEpisodeBuilder.update(project_id, workcopy_id, task_id, evidence) -> WorkEpisode   # A4+
 ```
 
 所有 `as_of` 查询必须只读取该时间点已经可用的证据。
@@ -514,23 +619,25 @@ UI 不直接写数据库；所有纠错经过 CorrectionService。
 推荐顺序：
 
 ```text
-A1 Project Identity + manual Resume Brief
-A2 Evidence-grounded deterministic Task Snapshot
-A3 User Correction + supersession
+A1 Project + WorkCopy + Task binding, first-use note, manual Resume Brief
+A2 Evidence-grounded deterministic Task Snapshot + result applicability
+A3 Correction / evidence view / scoped delete + supersession
 A4 WorkEpisode + automatic resume trigger
-A5 LLM-assisted interpretation with grounding gate
-A6 Minimal desktop/panel UX
+A5 LLM-assisted interpretation with grounding gate + suggestion exposure
+A6 Desktop integration / panel UX polish
 ```
 
-A1/A2 先确保即使没有 LLM，也能对 Git 项目给出可信的基本恢复信息。
+A1 就必须可自用：用户能选择或创建当前 task、绑定 workcopy，并直接填写“当前目标 / 做到哪里 / 下一步”；随后可以手动打开 compact Resume Brief。此阶段不依赖 WorkEpisode 或 LLM。
 
-A3 是长期可用性的必要条件，不能推迟到“以后做反馈”。
+A2 增加只读 observation adapter、EvidenceSet、TaskSnapshot 和 VerifiedResult applicability，使 Brief 能区分“历史上验证通过”与“当前仍适用”。
 
-A4 才开始让系统自动判断什么时候应该展示恢复卡片。
+A3 是长期可用性的必要条件：提供直接可用的纠错、查看证据和 scoped delete 入口，普通更新走 supersession，删除走 privacy-first 清除语义。
 
-A5 只增强语义覆盖，不改变 canonical truth model。
+A4 才开始让系统根据 WorkEpisode / inactivity / project re-entry 自动判断什么时候应该展示恢复卡片。
 
-A6 以真实日常使用为验收，不追求复杂视觉设计。
+A5 只增强语义覆盖，不改变 canonical truth model；只要 UI 展示模型生成的 candidate_next_step，就必须记录 `suggestion_exposure`，即使是用户主动打开 Brief，而不是等到 Phase B 主动推送才记录。
+
+A6 负责桌面常驻、自动唤起、交互流畅性和视觉完善，不负责补上 A1-A3 缺失的核心产品入口。
 ## 21. Phase B / C 的边界
 
 Phase B（主动工作助手）只有在 Phase A 的 Task State 与 Resume Brief 足够可信后开放。
@@ -545,7 +652,7 @@ Shadow Mode
 Suggestion Exposure provenance
 ```
 
-Phase C（受限可执行 Agent）只有在 B 的帮助决策和 E0/E1 trust substrate 基础上开放。
+Phase C（受限可执行 Agent）不以 Phase B 的主动预测成功为硬前提。用户明确请求的受限执行，可以在 Task State 足够可信、E0/E1 trust substrate 就绪，并满足独立的授权/执行安全 Gate 后逐项开放；主动式自动执行则仍需额外经过 Phase B 的帮助时机与打扰风险验证。
 
 Phase C 必须额外具备：
 
@@ -566,16 +673,20 @@ Task Continuity MVP 本身不获得这些权限。
 3. Task State 成为 Memory 与用户界面之间的核心产品表示；
 4. LLM interpretation 与 canonical fact 永久分离；
 5. correction 是核心交互，不是异常处理；
-6. technical session 与 WorkEpisode 永久分离；
-7. Phase A 默认无副作用执行权限；
-8. E0/E1 trust plane 保留，E2 不再依赖低层 prediction 成功；
-9. 真实可用性优先于论文 benchmark 完整度；
-10. 当前正在运行的 Milestone A 8-hour soak 继续作为独立工程资格，不因产品路线调整而作废。
+6. technical session 与 WorkEpisode 永久分离；Project / WorkCopy / Task 也永久分离，分支名不充当永久任务身份；
+7. Phase A 允许只读观察已登记项目，并写 PersonalAgent 自身状态；模型输出默认无项目副作用执行权限；
+8. provenance、validity/applicability 与 evidence scope 分离，历史验证不自动等于当前有效；
+9. 普通状态更新保留版本历史，但用户显式删除优先于审计保留；
+10. E0/E1 trust plane 保留，E2 不再依赖低层 prediction 成功；
+11. 真实可用性优先于论文 benchmark 完整度；
+12. 当前正在运行的 Milestone A 8-hour soak 继续作为独立工程资格，不因产品路线调整而作废。
 
 ## 23. 下一阶段
 
 本 spec 经用户书面审阅批准后，下一步才进入 implementation planning。
 
-Implementation plan 应优先落 A1→A3，使系统尽快能够在真实 PersonalAgent 项目上 dogfood：识别项目、生成 evidence-grounded snapshot、显示 Resume Brief、接受用户纠错。
+Implementation plan 应优先落 A1→A3，使系统尽快能够在真实 PersonalAgent 项目上 dogfood：识别 project/workcopy/task、首次建档、生成 evidence-grounded snapshot、显示 compact Resume Brief、查看证据、接受纠错与 scoped delete。
 
-在 spec 批准之前，不实现 Task Continuity 产品代码。
+A1→A3 的首个端到端验收场景冻结为：**隔天返回 PersonalAgent 的某个工作副本，系统恢复正确任务，明确说明历史验证结果当前是否仍适用，用户可以立即纠错；同一仓库另一 worktree/task 的目标、blocker 和验证结果不得混入。**
+
+在修订 spec 获得最终批准之前，不实现 Task Continuity 产品代码。
