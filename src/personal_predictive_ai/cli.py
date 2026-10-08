@@ -12,10 +12,30 @@ from personal_predictive_ai.config import Settings
 from personal_predictive_ai.diagnostics.memory_replay import derive_b2, iter_b2_replay_lines
 from personal_predictive_ai.diagnostics.state_replay import derive_b1, iter_b1_replay_lines
 from personal_predictive_ai.events.ids import EventFactory
+from personal_predictive_ai.knowledge.models import KnowledgeRecord
 from personal_predictive_ai.prediction.benchmark import run_milestone_c
 from personal_predictive_ai.prediction.readiness import audit_longitudinal_status
 from personal_predictive_ai.runtime.service import CaptureService, ServiceStatus
+from personal_predictive_ai.skills.models import SkillDraft, SkillStatus
+from personal_predictive_ai.skills.packages import (
+    PackageScanBlockedError,
+    PackageTamperedError,
+    UnsafePackagePathError,
+    approve_package,
+    quarantine_local_package,
+    scan_package,
+)
+from personal_predictive_ai.skills.projection import projection_manifest_for, render_skill_markdown
+from personal_predictive_ai.skills.registry import (
+    RiskDowngradeApprovalRequired,
+    StaleSkillVersionError,
+    TrustedRegistryService,
+    UnsupportedE1TransitionError,
+    UntrustedSkillPackageError,
+)
+from personal_predictive_ai.skills.retrieval import get_skill_core, list_skill_index
 from personal_predictive_ai.storage.derived_store import DerivedStore
+from personal_predictive_ai.storage.knowledge_skill_store import KnowledgeSkillStore
 from personal_predictive_ai.storage.memory_store import MemoryStore
 
 
@@ -131,16 +151,187 @@ def build_parser() -> argparse.ArgumentParser:
     longitudinal_parser = subparsers.add_parser("longitudinal-status")
     longitudinal_parser.add_argument("--source-b1-run-id", required=True)
 
+    knowledge_import = subparsers.add_parser("knowledge-import")
+    knowledge_import.add_argument("--file", type=Path, required=True)
+
+    skill_stage = subparsers.add_parser("skill-stage")
+    skill_stage.add_argument("--file", type=Path, required=True)
+    skill_stage.add_argument("--proposed-by", required=True)
+    skill_stage.add_argument("--package-id", default=None)
+
+    skill_approve = subparsers.add_parser("skill-approve")
+    skill_approve.add_argument("--proposal-id", required=True)
+    skill_approve.add_argument("--approver", required=True)
+    skill_approve.add_argument("--allow-risk-downgrade", action="store_true")
+
+    skill_list = subparsers.add_parser("skill-list")
+    skill_list.add_argument("--status", choices=[item.value for item in SkillStatus])
+
+    skill_show = subparsers.add_parser("skill-show")
+    skill_show.add_argument("--skill-id", required=True)
+    skill_show.add_argument("--level", choices=["index", "core"], required=True)
+    skill_show.add_argument("--version", type=int, default=None)
+
+    skill_export = subparsers.add_parser("skill-export")
+    skill_export.add_argument("--skill-id", required=True)
+    skill_export.add_argument("--output", type=Path, required=True)
+    skill_export.add_argument("--version", type=int, default=None)
+
+    package_import = subparsers.add_parser("skill-package-import")
+    package_import.add_argument("--path", type=Path, required=True)
+    package_import.add_argument("--source-uri", required=True)
+    package_import.add_argument("--source-revision", required=True)
+
+    package_scan = subparsers.add_parser("skill-package-scan")
+    package_scan.add_argument("--package-id", required=True)
+
+    package_approve = subparsers.add_parser("skill-package-approve")
+    package_approve.add_argument("--package-id", required=True)
+    package_approve.add_argument("--reviewer", required=True)
+
     subparsers.add_parser("status")
     expire = subparsers.add_parser("expire-raw")
     expire.add_argument("--now-ns", type=int, default=None)
     return parser
 
 
+_E1_COMMANDS = {
+    "knowledge-import",
+    "skill-stage",
+    "skill-approve",
+    "skill-list",
+    "skill-show",
+    "skill-export",
+    "skill-package-import",
+    "skill-package-scan",
+    "skill-package-approve",
+}
+
+
+def _print_json(value: object) -> None:
+    print(json.dumps(value, ensure_ascii=False, sort_keys=True))
+
+
+def _error_code(exc: Exception) -> str:
+    mapping = {
+        UntrustedSkillPackageError: "untrusted_skill_package",
+        PackageScanBlockedError: "package_scan_blocked",
+        PackageTamperedError: "package_tampered",
+        UnsafePackagePathError: "unsafe_package_path",
+        RiskDowngradeApprovalRequired: "risk_downgrade_requires_approval",
+        StaleSkillVersionError: "stale_skill_version",
+        UnsupportedE1TransitionError: "unsupported_e1_transition",
+    }
+    for error_type, code in mapping.items():
+        if isinstance(exc, error_type):
+            return code
+    return "validation_error"
+
+
+def _run_e1_command(args: argparse.Namespace, settings: Settings) -> int:
+    store = KnowledgeSkillStore(settings.data_dir / "events.db")
+    service = TrustedRegistryService(store)
+    quarantine_root = settings.data_dir / "skill-packages" / "quarantine"
+    try:
+        if args.command == "knowledge-import":
+            record = KnowledgeRecord.model_validate_json(args.file.read_text(encoding="utf-8"))
+            _print_json(service.import_human_knowledge(record).model_dump(mode="json"))
+        elif args.command == "skill-stage":
+            draft = SkillDraft.model_validate_json(args.file.read_text(encoding="utf-8"))
+            if args.package_id is not None:
+                draft = draft.model_copy(update={"source_package_id": args.package_id})
+            proposal = service.stage_skill_create(draft, proposed_by=args.proposed_by)
+            _print_json(proposal.model_dump(mode="json"))
+        elif args.command == "skill-approve":
+            record = service.approve_proposal(
+                args.proposal_id,
+                approver=args.approver,
+                allow_risk_downgrade=args.allow_risk_downgrade,
+            )
+            _print_json(record.model_dump(mode="json"))
+        elif args.command == "skill-list":
+            statuses = None if args.status is None else {SkillStatus(args.status)}
+            items = list_skill_index(store, statuses=statuses)
+            _print_json([item.model_dump(mode="json") for item in items])
+        elif args.command == "skill-show":
+            record = store.get_skill(args.skill_id, args.version)
+            if record is None:
+                raise KeyError(args.skill_id)
+            if args.level == "core":
+                payload = get_skill_core(
+                    store,
+                    args.skill_id,
+                    version=args.version,
+                ).model_dump(mode="json")
+            else:
+                payload = {
+                    "skill_id": record.skill_id,
+                    "name": record.name,
+                    "purpose": record.purpose,
+                    "kind": record.kind.value,
+                    "risk_class": record.risk_class.value,
+                    "status": record.status.value,
+                    "version": record.version,
+                }
+            _print_json(payload)
+        elif args.command == "skill-export":
+            record = store.get_skill(args.skill_id, args.version)
+            if record is None:
+                raise KeyError(args.skill_id)
+            content = render_skill_markdown(record)
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(content, encoding="utf-8")
+            manifest = projection_manifest_for(record, output_path=args.output, content=content)
+            store.put_projection_manifest(manifest)
+            _print_json(manifest.model_dump(mode="json"))
+        elif args.command == "skill-package-import":
+            manifest = quarantine_local_package(
+                store,
+                args.path,
+                source_uri=args.source_uri,
+                source_revision=args.source_revision,
+                quarantine_root=quarantine_root,
+            )
+            _print_json(manifest.model_dump(mode="json"))
+        elif args.command == "skill-package-scan":
+            manifest = scan_package(store, args.package_id, quarantine_root=quarantine_root)
+            _print_json(manifest.model_dump(mode="json"))
+        elif args.command == "skill-package-approve":
+            manifest = approve_package(
+                store,
+                args.package_id,
+                reviewer=args.reviewer,
+                quarantine_root=quarantine_root,
+            )
+            _print_json(manifest.model_dump(mode="json"))
+        else:
+            raise ValueError(f"unsupported E1 command: {args.command}")
+        return 0
+    except (
+        ValueError,
+        KeyError,
+        OSError,
+        UntrustedSkillPackageError,
+        PackageScanBlockedError,
+        PackageTamperedError,
+        UnsafePackagePathError,
+        RiskDowngradeApprovalRequired,
+        StaleSkillVersionError,
+        UnsupportedE1TransitionError,
+    ) as exc:
+        _print_json({"error": _error_code(exc), "detail": str(exc)})
+        return 2
+    finally:
+        store.close()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     settings = _settings_from_args(args)
     factory = EventFactory()
+
+    if args.command in _E1_COMMANDS:
+        return _run_e1_command(args, settings)
 
     if args.command == "derive-b1":
         summary = derive_b1(settings.data_dir / "events.db", run_id=args.run_id)

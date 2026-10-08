@@ -426,3 +426,63 @@ with Obsidian/Markdown as an optional human-facing projection.
 ```
 
 因此下一步 written spec 应冻结 E0–E5，并且把执行权限明确留给 Milestone F。
+
+
+## 12. 2026-10-08 工业架构增量：Hermes / MXC / PersonalAgentBench
+
+2026-10-08 对三个新公开系统做补充审计，目标不是追逐产品功能，而是检查它们是否暴露了我们 Milestone E/F 尚未建模的工程边界。
+
+### 12.1 Hermes Agent：Skill 生命周期与供应链
+
+Hermes Agent 当前公开文档明确把 Skill 作为 procedural memory，并采用 progressive disclosure：L0 只暴露 Skill index，L1 加载 Skill 正文，L2 再按需加载 reference。Skill 格式本身包含 `When to Use / Procedure / Pitfalls / Verification`；同时提供 `skills.write_approval`，把 agent 发起的 Skill 写入先暂存后审批。
+
+其第三方 Skill 安装流程还维护 quarantine、source URL、exact content hash、scanner version、findings 与 audit log。这说明“Skill 内容本身”和“Skill package 的来源可信度”应被分离建模。
+
+官方资料：
+- https://github.com/NousResearch/hermes-agent
+- https://hermes-agent.nousresearch.com/docs/user-guide/features/skills
+- https://hermes-agent.nousresearch.com/docs/user-guide/features/memory
+
+对我们的增量结论：
+
+```text
+Skill text != trusted Skill
+Skill import != Skill approval
+Skill mutation proposal != canonical mutation
+```
+
+因此 Milestone E 新增 `SkillMutationProposal`、`SkillPackageManifest` 和 L0/L1/L2 progressive disclosure。与 Hermes 不同，我们仍要求 immutable canonical versions、cross-session evidence、negative evidence 和 provenance-aware verification。
+
+### 12.2 Microsoft Execution Containers：执行权限必须由 Agent 外部强制
+
+MXC 将 filesystem、network、UI 等权限声明放入独立 containment policy，并提供 ProcessContainer、WSLC、IsolationSession、MicroVM 等不同后端。其公开 schema 与实现文档同时说明：不同 backend 能力并不完全同构；例如某些隔离后端无法强制特定 network restriction。
+
+官方资料：
+- https://github.com/microsoft/mxc
+- https://blogs.windows.com/windowsdeveloper/2026/10/07/microsoft-execution-containers-policy-driven-containment-for-ai-agents/
+
+因此不能使用：
+
+```text
+sandbox selected -> safe
+```
+
+而必须使用：
+
+```text
+ExecutionEnvelope
+  -> BackendCapabilityProfile
+  -> all required restrictions enforceable?
+       no  -> fail closed
+       yes -> execute
+```
+
+这属于 Milestone F，而不是 E。E 只冻结 `required_capabilities / risk_class / verification_spec`，不把某个 sandbox 名称写成安全真值。
+
+### 12.3 PersonalAgentBench：Task Completion 与 Trusted Completion 分离
+
+PersonalAgentBench 的主要价值不是早期排行榜，而是把普通 task completion 与 trusted completion 分开，单独关注 authorization、真实账户状态、隐私披露和结果真实性。
+
+官方页面：https://www.micro1.ai/personal-agent-bench
+
+这强化了未来 F 的评估边界：`TaskOutcome`、`AuthorizationCompliance`、`StateConsistency`、`DisclosureMinimization`、`VerificationIntegrity` 应分别记录，不能压缩成单个 `success=true`。该接口在 E 中只做语义预留，不改变 Milestone C 的预测指标。

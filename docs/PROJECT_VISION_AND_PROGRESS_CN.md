@@ -1,7 +1,7 @@
 # Personal Predictive AI：项目思想、架构与当前进度
 
-> 更新时间：2026-10-07  
-> 仓库：`Leslielee119/personal_agent`  
+> 更新时间：2026-10-08
+> 仓库：`Leslielee119/personal_agent`
 > 当前主线：本地 Personal Predictive Generative System
 
 ## 1. 我们到底想做什么
@@ -685,3 +685,37 @@ Milestone A 仍有两个独立 qualification Gate 未闭合：
 2. formal 8-hour soak。
 
 它们不会否定 B1/B2 已完成的语义实现，但正式长期运行资格仍需要后续闭合。
+
+
+## 19. 2026-10-08：Milestone E0/E1 Trusted Knowledge & Skill Registry
+
+在 Milestone C 等待真实纵向数据期间，E0/E1 已完成实现资格验证。这里的目标不是让 AI 立即“自我进化”，而是先建立一个可审计、可撤销、默认不执行的 Knowledge / Skill 信任平面。
+
+相关文档：
+
+- `docs/superpowers/specs/2026-10-07-milestone-e-personal-knowledge-skill-plane-design.md`
+- `docs/superpowers/plans/2026-10-08-milestone-e0-e1-trusted-registry.md`
+- `docs/milestones/MILESTONE_E0_E1_ACCEPTANCE.md`
+
+当前已经实现：
+
+- canonical `KnowledgeRecord`、`SkillDraft`、immutable versioned `SkillRecord`；
+- `SkillMutationProposal -> explicit approval -> DRAFT SkillRecord` 的受控变更链；
+- imported package quarantine / scan / approval 与 source revision/content hash provenance；
+- package 在 scan、approve、L2 retrieval 前重新校验 exact file set 与 content hash；
+- L0/L1/L2 progressive disclosure，reference 只读且不会执行脚本；
+- deterministic Markdown projection，projection edit 只产生 proposal；
+- human knowledge source gate，AI_PROPOSED 不能直接伪装成人工知识进入 canonical registry；
+- CLI import/stage/approve/list/show/export/package workflow；
+- projection identity/version/status/provenance/evidence 等 machine-controlled 字段 fail closed。
+
+当前冻结边界为：
+
+```text
+E0/E1 = IMPLEMENTATION QUALIFIED
+E2 = CLOSED — WAITING FOR LONGITUDINAL EVIDENCE
+E3 = CLOSED
+F  = CLOSED
+```
+
+Milestone C 的 validity-first 约束没有被绕过：E2 Behavior-to-Skill 仍必须等待足够的跨 session 真实行为证据；当前系统也没有 Skill 自动执行、AI 自动自改或 desktop autonomous execution 权限。

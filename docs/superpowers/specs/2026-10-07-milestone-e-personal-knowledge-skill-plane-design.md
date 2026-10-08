@@ -1,7 +1,7 @@
 # Milestone E — Personal Knowledge & Verified Skill Plane Design
 
 日期：2026-10-07
-状态：Draft for written-spec review after prior-art audit
+状态：Approved design baseline — 2026-10-08 trust hardening integrated; E0/E1 implementation plan pending execution choice
 
 ## 1. 目标
 
@@ -256,6 +256,103 @@ INVALID
 - RETIRED：主动停止使用，但不视为错误；
 - INVALID：验证失败或与安全/事实冲突。
 
+### 6.6 VerificationSpec
+
+Verification 必须是 canonical structured object，而不是只有自由文本说明：
+
+```text
+VerificationSpec
+  verification_id
+  method
+  expected_observation
+  evidence_requirements
+  allowed_risk_class
+  timeout
+  failure_conditions
+  independence_requirement
+  schema_version
+```
+
+V1 只允许：
+
+```text
+STATIC
+EVIDENCE_CONSISTENCY
+OFFLINE_REPLAY
+HELD_OUT_SESSION
+READ_ONLY_LIVE
+```
+
+E 阶段不得自动执行 `WRITE_LOCAL` / `ACT_LOCAL` / `EXTERNAL_EFFECT` live verification。
+
+### 6.7 SkillMutationProposal
+
+模型、用户编辑器或 importer 都不能原地覆盖 canonical SkillRecord。所有语义变更必须先形成：
+
+```text
+SkillMutationProposal
+  proposal_id
+  target_skill_id
+  base_version
+  mutation_kind
+  proposed_patch
+  rationale
+  evidence_refs
+  contradiction_refs
+  proposed_by
+  created_at
+  validation_result
+  approval_status
+  approved_by / approved_at
+  resulting_version
+  schema_version
+```
+
+`mutation_kind` 至少区分 `CREATE / UPDATE / RETIRE / SUPERSEDE / INVALIDATE`；`approval_status` 至少区分 `PENDING / APPROVED / REJECTED / EXPIRED / INVALID`。
+
+只有 `APPROVED` proposal 才能生成新的 immutable SkillRecord version；历史版本不得原地修改。
+
+### 6.8 SkillPackageManifest
+
+外部 Skill package 与 canonical SkillRecord 必须分离。任何 GitHub / registry / Hermes / project import 先进入 package 层：
+
+```text
+SkillPackageManifest
+  package_id
+  skill_id
+  source_type
+  source_uri
+  source_revision
+  content_hash
+  imported_at
+  importer
+  scanner_version
+  scanner_findings
+  referenced_files
+  trust_state
+  approved_by / approved_at
+  schema_version
+```
+
+`trust_state` 至少区分 `QUARANTINED / SCANNED / REVIEWED / APPROVED / REJECTED / SUPERSEDED`。外部 Markdown 或脚本不能因为格式合法而直接成为 ACTIVE Skill；source revision、content hash 和 scan findings 必须作为 provenance 保存。
+
+### 6.9 Progressive Disclosure
+
+Skill retrieval 使用三级加载，避免把完整 Skill corpus 永久注入上下文：
+
+```text
+L0 Skill Index:
+  skill_id / name / purpose / short_description / risk_class / status / version
+
+L1 Skill Core:
+  initiation / preconditions / procedure / termination / verification / capabilities
+
+L2 References:
+  examples / templates / reference docs / script metadata / historical evidence
+```
+
+默认先检索 L0，只对候选加载 L1；只有任务确实需要时才加载 L2。L2 中存在脚本或引用文件不等于 execution authorization，也不得隐式扩大 `required_capabilities`。
+
 ## 7. Risk 与 Authorization 边界
 
 ### 7.1 RiskClass
@@ -320,12 +417,21 @@ Human Knowledge Draft
 
 Human Skill Draft
   -> parse/validate
-  -> DRAFT SkillRecord
+  -> SkillMutationProposal(CREATE)
+  -> human approval
+  -> immutable DRAFT SkillRecord version
   -> verification
   -> VERIFIED / ACTIVE
+
+External Skill Package
+  -> QUARANTINED SkillPackageManifest
+  -> source/hash/scan freeze
+  -> human review
+  -> SkillMutationProposal(CREATE)
+  -> canonical SkillRecord
 ```
 
-V1 必须保留原始 author/provenance，并生成 deterministic IDs / versions。
+V1 必须保留原始 author/provenance，并生成 deterministic IDs / versions。未经审批的外部 package 不得进入 ACTIVE registry；模型生成或模型修改的 Skill 也不得绕过 proposal gate。
 
 ### 8.1 Human edit policy
 
@@ -343,6 +449,10 @@ edit projection
 ```
 
 也就是说 projection 是 editable interface，但不是绕过 lifecycle 的数据库后门。
+
+### 8.2 E1 progressive disclosure contract
+
+E1 的 read-only retrieval 必须区分 L0/L1/L2。默认 list/search 只返回 L0；显式选中某个 Skill 后才加载 L1；L2 必须按具体 reference path 按需读取。任何 retrieval API 都不得因为展示 Skill 而自动执行 reference script、解析任意外部附件，或扩大当前 capability set。
 
 ## 9. E2 — Behavior-to-Skill Candidate Compiler
 
@@ -736,6 +846,9 @@ Milestone E 计划生成：
 KnowledgeRecord
 SkillCandidate
 SkillRecord
+VerificationSpec
+SkillMutationProposal
+SkillPackageManifest
 SkillEvidenceLink
 SkillDependency
 SkillValidationRun
@@ -763,6 +876,10 @@ SkillAuditEvent
 - strict provenance；
 - lifecycle state machine 合法；
 - risk_class 必填；
+- historical Skill version 不可原地修改；
+- 未批准的 SkillMutationProposal 不能生成 canonical version；
+- external package 的 source/revision/hash/scan findings 不得在 canonicalization 后丢失；
+- QUARANTINED / REJECTED package 不得进入 ACTIVE registry；
 - no unsafe hidden fields；
 - projection 不能覆盖 canonical truth。
 
@@ -775,6 +892,14 @@ SKILL_SCHEMA_NOT_QUALIFIED
 ### Gate E1 — Human-authored Round Trip
 
 人工 Skill 从 canonical → Markdown projection → parse-back，在无编辑时必须 semantic equivalent；人工修改必须生成 proposed mutation 而不是 silent apply。
+
+同时必须证明：
+
+- L0 retrieval 不自动读取完整 Skill/reference corpus；
+- L2 reference/script presence 不产生 execution authorization；
+- `VERIFIED` / `ACTIVE` 不改变 WRITE/ACT/EXTERNAL_EFFECT 的审批要求；
+- risk class 不能被 import/mutation 静默降低；
+- E0/E1 测试不得实际执行有副作用 Skill。
 
 失败：
 
@@ -871,20 +996,41 @@ F 的起点：
 ```text
 proposal
 → authorization decision
+→ execution envelope
+→ backend capability check
 → tool/MCP execution
 → effect verification
+→ trusted-completion assessment
 → user feedback
 → provenance-aware learning
 ```
 
 因此 E 不实现 side-effect executor。
 
+同时冻结新的 F 边界不变量：
+
+```text
+Sandbox selected != policy enforced
+Task completed != trusted completion
+```
+
+未来 F 必须维护受信 `BackendCapabilityProfile`，至少描述 filesystem read/write control、network ingress/egress control、clipboard、input injection、UI isolation、process isolation、credential isolation、backend version 与验证证据。如果 execution envelope 要求某项限制而当前 backend 无法强制执行，则 fail closed，而不是静默降级。
+
+未来 F 的 `TrustedCompletionReport` 至少独立报告：`TaskOutcome`、`AuthorizationCompliance`、`StateConsistency`、`DisclosureMinimization`、`VerificationIntegrity`。该接口这里只做语义预留，不属于 E0/E1 implementation scope。
+
 ## 22. 推荐实施顺序
 
 ```text
 E0 Canonical Knowledge / Skill schema
+   + VerificationSpec
+   + immutable Skill versioning
+   + SkillMutationProposal
+   + SkillPackageManifest
   ↓
-E1 Human-authored Skill + Markdown projection
+E1 Human-authored Skill + approval staging
+   + quarantine/provenance
+   + read-only progressive disclosure
+   + Markdown projection
   ↓
 E2 Behavior-to-Skill Candidate Compiler
   ↓
