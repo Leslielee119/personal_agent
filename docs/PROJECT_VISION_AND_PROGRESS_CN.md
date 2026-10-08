@@ -679,12 +679,13 @@ learned policy / Milestone D: NOT YET ELIGIBLE
 
 ## 18. 当前仍开放的基础资格项
 
-Milestone A 仍有两个独立 qualification Gate 未闭合：
+Milestone A 的 physical mouse native qualification 已于 2026-10-08 通过：独立 native OpenAdapt 资格采集记录到 2 条 `HUMAN_PHYSICAL` 鼠标事件（`mouse.down=1`、`mouse.up=1`），未使用 injected input，且临时 raw 屏幕数据已删除。
 
-1. physical mouse native qualification；
-2. formal 8-hour soak。
+因此当前只剩一个独立 qualification Gate 未闭合：
 
-它们不会否定 B1/B2 已完成的语义实现，但正式长期运行资格仍需要后续闭合。
+1. formal 8-hour soak。
+
+这不会否定 B1/B2/C/E 已完成的语义与工程实现，但在 8 小时正式稳定性运行通过之前，Milestone A 仍不能称为 fully qualified。
 
 
 ## 19. 2026-10-08：Milestone E0/E1 Trusted Knowledge & Skill Registry

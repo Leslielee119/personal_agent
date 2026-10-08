@@ -6,15 +6,14 @@ Scope: local observation/capture data plane only. No State Estimator, predictor,
 
 ## Overall status
 
-**QUALIFICATION PENDING — implementation complete, 5-minute pre-soak strong partial PASS, two final gates remain open.**
+**QUALIFICATION PENDING — implementation complete, 5-minute pre-soak strong partial PASS, physical-mouse qualification PASS, one final gate remains open.**
 
-Open gates:
-1. physical mouse input has not yet been observed in a native qualification run;
-2. the required real 8-hour soak has not yet been run.
+Open gate:
+1. the required real 8-hour soak has not yet been run.
 
 Historical gate at the start of qualification: Milestone B was originally blocked until both were closed.
 
-Execution ruling (2026-10-07): the user explicitly approved B1 implementation proceeding in parallel with the remaining physical-mouse and 8-hour-soak qualification work after the native mouse hook and injected-input rejection path were independently validated. These two gates remain mandatory before Milestone A may be called **fully qualified**, but they no longer block B1/B2 design work.
+Execution ruling (2026-10-07): the user explicitly approved B1 implementation proceeding in parallel with the then-open physical-mouse and 8-hour-soak qualification work after the native mouse hook and injected-input rejection path were independently validated. The physical-mouse gate was closed by real native evidence on 2026-10-08; only the 8-hour soak remains mandatory before Milestone A may be called **fully qualified**.
 
 ## Frozen acceptance gates
 
@@ -130,11 +129,27 @@ During the pre-soak:
 
 ## Mouse qualification
 
-Status: **PENDING PHYSICAL INPUT EVIDENCE**.
+Status: **PASS — REAL PHYSICAL MOUSE EVIDENCE RECORDED (2026-10-08)**.
 
-A separate 30-second native qualification captured keyboard/process/screen/window events but no mouse events. Source inspection confirms OpenAdapt `InputListener` is configured with `observe_mouse=True`, and our adapter accepts raw `MouseDownEvent` and mouse event families. No implementation drop path has been identified.
+Dedicated native qualification directory:
+`E:\Experiment\personal-predictive-ai-runtime\qualification\mouse-native-20261008-1132`
 
-Because OpenAdapt deliberately filters injected Windows input, this gate must be closed with real physical mouse click/scroll input on the reference desktop. It is not acceptable to synthesize an injected mouse event and call the native gate passed.
+Observed persisted `HUMAN_PHYSICAL` evidence:
+
+- physical events: **2**;
+- mouse events: **2**;
+- `mouse.down`: **1**;
+- `mouse.up`: **1**;
+- keyboard events: **0**.
+
+The run used the real OpenAdapt native hook. No injected input was synthesized; upstream injected-input filtering therefore remains intact as an independent negative control. Temporary raw screen artifacts were deleted immediately after the structured event summary was generated.
+
+Evidence hashes:
+
+- `mouse_qualification_summary.json` SHA-256: `A9C89F49DAD5FDFD760EED7A2554D2D75D4BB7DF5E735C4B5518C323F616C56F`;
+- `events.db` SHA-256: `A3D829CEF714BC3E89FB0DF7064536A4456351B9DA1530EAB9DD01B71A131602`.
+
+This closes the physical-mouse qualification gate. It does not substitute for the formal 8-hour soak.
 
 ## Structured-short retention and restart safety
 
@@ -172,6 +187,6 @@ The 5-minute pre-soak is not a substitute for this gate.
 
 ## Decision
 
-Current decision: **Milestone A remains qualification-pending, while higher-level design/B1 implementation may proceed in parallel by explicit user ruling.**
+Current decision: **Milestone A remains qualification-pending solely because the formal 8-hour soak has not yet been completed.**
 
-The capture/data-plane implementation is functionally complete and the measured short qualification is healthy. B1 has since been implemented and merged, but this does not retroactively close Milestone A: physical mouse evidence and the required 8-hour soak must still be recorded before Milestone A is declared fully qualified.
+The capture/data-plane implementation is functionally complete; the measured short qualification is healthy; and real native physical-mouse evidence is now recorded. Higher-level B1/B2/C/E work may continue under the prior ruling, but Milestone A must not be called fully qualified until the required 8-hour soak also passes.
