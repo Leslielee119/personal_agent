@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from personal_predictive_ai.continuity.ids import brief_id_for
-from personal_predictive_ai.continuity.models import ResumeBriefRecord, TaskSnapshot
+from personal_predictive_ai.continuity.models import (
+    ApplicabilityStatus,
+    ResumeBriefRecord,
+    TaskSnapshot,
+)
 from personal_predictive_ai.storage.continuity_store import ContinuityStore
 
 
@@ -13,10 +17,27 @@ class ResumeBriefService:
         task = self.store.get_task(snapshot.task_id)
         if task is None:
             raise KeyError(snapshot.task_id)
-        attention = snapshot.blockers + snapshot.pending_items + snapshot.constraints
+        attention = list(snapshot.blockers + snapshot.pending_items + snapshot.constraints)
         sections: dict[str, object] = {"current_task": snapshot.current_goal or task.title}
         if snapshot.last_position:
             sections["last_position"] = snapshot.last_position
+        if snapshot.verified_result_ids:
+            result_id = snapshot.verified_result_ids[-1]
+            result = self.store.get_verified_result(result_id)
+            if result is not None:
+                applicability = snapshot.verification_applicability.get(
+                    result_id, result.applicability
+                )
+                sections["verification"] = {
+                    "check_kind": result.check_kind,
+                    "outcome": result.outcome,
+                    "applicability": applicability.value,
+                }
+                if (
+                    result.outcome.lower() == "pass"
+                    and applicability != ApplicabilityStatus.CURRENT
+                ):
+                    attention.append("上次通过，当前状态尚未复验")
         if attention:
             sections["attention"] = attention
         if snapshot.candidate_next_step:

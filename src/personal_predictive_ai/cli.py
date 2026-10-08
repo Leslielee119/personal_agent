@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -11,8 +12,10 @@ from personal_predictive_ai.collector.base import Collector, CollectorContext
 from personal_predictive_ai.config import Settings
 from personal_predictive_ai.continuity.brief import ResumeBriefService
 from personal_predictive_ai.continuity.corrections import CorrectionService, EvidenceViewService
+from personal_predictive_ai.continuity.git_observer import GitObserver
 from personal_predictive_ai.continuity.registry import ContinuityRegistry
 from personal_predictive_ai.continuity.state import TaskStateService
+from personal_predictive_ai.continuity.verification import VerificationService
 from personal_predictive_ai.diagnostics.memory_replay import derive_b2, iter_b2_replay_lines
 from personal_predictive_ai.diagnostics.state_replay import derive_b1, iter_b1_replay_lines
 from personal_predictive_ai.events.ids import EventFactory
@@ -196,6 +199,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     continuity_forget.add_argument("--id", required=True)
 
+    continuity_record_result = subparsers.add_parser("continuity-record-result")
+    continuity_record_result.add_argument("--task-id", required=True)
+    continuity_record_result.add_argument("--check-kind", required=True)
+    continuity_record_result.add_argument("--outcome", required=True)
+    continuity_record_result.add_argument("--scope", required=True)
+
     knowledge_import = subparsers.add_parser("knowledge-import")
     knowledge_import.add_argument("--file", type=Path, required=True)
 
@@ -258,6 +267,7 @@ _CONTINUITY_COMMANDS = {
     "continuity-correct",
     "continuity-evidence",
     "continuity-forget",
+    "continuity-record-result",
 }
 
 
@@ -408,7 +418,12 @@ def _run_continuity_command(args: argparse.Namespace, settings: Settings) -> int
                 }
             )
         elif args.command == "continuity-resume":
-            snapshot = state.build(args.task_id, as_of_ns=now_ns)
+            binding = registry.resolve_task(args.task_id)
+            try:
+                git_state = GitObserver().observe(binding.workcopy, now_ns=now_ns)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                git_state = None
+            snapshot = state.build(args.task_id, as_of_ns=now_ns, git_state=git_state)
             brief = brief_service.render(snapshot, generated_at_ns=now_ns)
             if args.format == "json":
                 _print_json(
@@ -444,10 +459,22 @@ def _run_continuity_command(args: argparse.Namespace, settings: Settings) -> int
                 args.scope, args.id, now_ns=now_ns
             )
             _print_json(tombstone.model_dump(mode="json"))
+        elif args.command == "continuity-record-result":
+            binding = registry.resolve_task(args.task_id)
+            git_state = GitObserver().observe(binding.workcopy, now_ns=now_ns)
+            result = VerificationService(store).record_user_declared(
+                args.task_id,
+                check_kind=args.check_kind,
+                outcome=args.outcome,
+                command_or_adapter_scope=args.scope,
+                git_state=git_state,
+                now_ns=now_ns,
+            )
+            _print_json(result.model_dump(mode="json"))
         else:
             raise ValueError(f"unsupported continuity command: {args.command}")
         return 0
-    except (KeyError, OSError, ValueError) as exc:
+    except (KeyError, LookupError, OSError, ValueError, subprocess.CalledProcessError) as exc:
         _print_json({"error": "continuity_error", "detail": str(exc)})
         return 2
     finally:
