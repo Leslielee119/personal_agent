@@ -10,6 +10,7 @@ from typing import Sequence
 from personal_predictive_ai.collector.base import Collector, CollectorContext
 from personal_predictive_ai.config import Settings
 from personal_predictive_ai.continuity.brief import ResumeBriefService
+from personal_predictive_ai.continuity.corrections import CorrectionService, EvidenceViewService
 from personal_predictive_ai.continuity.registry import ContinuityRegistry
 from personal_predictive_ai.continuity.state import TaskStateService
 from personal_predictive_ai.diagnostics.memory_replay import derive_b2, iter_b2_replay_lines
@@ -179,6 +180,16 @@ def build_parser() -> argparse.ArgumentParser:
     continuity_resume.add_argument("--task-id", required=True)
     continuity_resume.add_argument("--format", choices=["text", "json"], default="text")
 
+    continuity_correct = subparsers.add_parser("continuity-correct")
+    continuity_correct.add_argument("--task-id", required=True)
+    continuity_correct.add_argument("--field", required=True)
+    continuity_correct.add_argument("--value", required=True)
+    continuity_correct.add_argument("--action", choices=["set", "add", "resolve"], default="set")
+
+    continuity_evidence = subparsers.add_parser("continuity-evidence")
+    continuity_evidence.add_argument("--task-id", required=True)
+    continuity_evidence.add_argument("--field", default=None)
+
     knowledge_import = subparsers.add_parser("knowledge-import")
     knowledge_import.add_argument("--file", type=Path, required=True)
 
@@ -235,7 +246,12 @@ _E1_COMMANDS = {
     "skill-package-approve",
 }
 
-_CONTINUITY_COMMANDS = {"continuity-init", "continuity-resume"}
+_CONTINUITY_COMMANDS = {
+    "continuity-init",
+    "continuity-resume",
+    "continuity-correct",
+    "continuity-evidence",
+}
 
 
 def _print_json(value: object) -> None:
@@ -396,6 +412,26 @@ def _run_continuity_command(args: argparse.Namespace, settings: Settings) -> int
                 )
             else:
                 print(brief_service.render_text(brief))
+        elif args.command == "continuity-correct":
+            corrections = CorrectionService(store)
+            if args.action == "set":
+                snapshot = corrections.correct_scalar(
+                    args.task_id, args.field, args.value, now_ns=now_ns
+                )
+            elif args.action == "add":
+                snapshot = corrections.add_item(
+                    args.task_id, args.field, args.value, now_ns=now_ns
+                )
+            else:
+                snapshot = corrections.resolve_item(
+                    args.task_id, args.field, args.value, now_ns=now_ns
+                )
+            _print_json({"snapshot": snapshot.model_dump(mode="json")})
+        elif args.command == "continuity-evidence":
+            items = EvidenceViewService(store).list_for_task(
+                args.task_id, field_name=args.field
+            )
+            _print_json([item.model_dump(mode="json") for item in items])
         else:
             raise ValueError(f"unsupported continuity command: {args.command}")
         return 0

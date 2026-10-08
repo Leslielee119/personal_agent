@@ -19,6 +19,7 @@ from personal_predictive_ai.continuity.verification import VerificationService
 from personal_predictive_ai.storage.continuity_store import ContinuityStore
 
 _SCALAR_FIELDS = ("current_goal", "last_position", "candidate_next_step")
+_LIST_FIELDS = ("blockers", "pending_items", "constraints")
 
 
 class TaskStateService:
@@ -133,10 +134,14 @@ class TaskStateService:
                 active_by_field.setdefault(item.field_name, []).append(item)
 
         latest: dict[str, TaskStateFieldVersion] = {}
+        list_values: dict[str, list[str]] = {}
         conflicts: list[FieldConflict] = []
         all_active: list[TaskStateFieldVersion] = []
         for field_name, candidates in active_by_field.items():
             all_active.extend(candidates)
+            if field_name in _LIST_FIELDS:
+                list_values[field_name] = [str(item.value) for item in candidates]
+                continue
             distinct = {
                 json.dumps(item.value, ensure_ascii=False, sort_keys=True): item.value
                 for item in candidates
@@ -195,9 +200,9 @@ class TaskStateService:
             current_goal=_text(latest.get("current_goal")),
             last_position=_text(latest.get("last_position")),
             candidate_next_step=_text(latest.get("candidate_next_step")),
-            blockers=_items(latest.get("blockers")),
-            pending_items=_items(latest.get("pending_items")),
-            constraints=_items(latest.get("constraints")),
+            blockers=list_values.get("blockers", []),
+            pending_items=list_values.get("pending_items", []),
+            constraints=list_values.get("constraints", []),
             field_version_ids=field_ids,
             evidence_ids=sorted(set(evidence_ids)),
             verified_result_ids=verified_result_ids,

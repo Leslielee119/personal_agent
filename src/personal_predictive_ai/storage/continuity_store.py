@@ -110,6 +110,16 @@ class ContinuityStore:
             ),
         )
 
+    def replace_field_version(self, item: TaskStateFieldVersion) -> None:
+        with self._lock, self._conn:
+            cursor = self._conn.execute(
+                "UPDATE continuity_field_versions SET data_json = ? "
+                "WHERE field_version_id = ?",
+                (self._encode(item), item.field_version_id),
+            )
+            if cursor.rowcount != 1:
+                raise KeyError(item.field_version_id)
+
     def add_verified_result(self, item: VerifiedResultRecord) -> None:
         self._insert(
             "INSERT INTO continuity_verified_results("
