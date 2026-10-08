@@ -187,14 +187,19 @@ def audit_validity(
     examples: Iterable[PredictionExample],
     folds: Iterable[PredictionFold],
     config: PredictionConfigV1,
+    *,
+    target_space: TargetSpace | None = None,
 ) -> ValidityAuditReport:
     ordered = sorted(examples, key=lambda item: (item.cutoff_seq, item.sample_id))
     fold_list = list(folds)
     if ordered:
-        target_space = ordered[0].target_space
-        if any(item.target_space is not target_space for item in ordered):
+        observed_target_space = ordered[0].target_space
+        if any(item.target_space is not observed_target_space for item in ordered):
             raise ValueError("validity audit requires one target space at a time")
-    else:
+        if target_space is not None and target_space is not observed_target_space:
+            raise ValueError("explicit target space disagrees with prediction examples")
+        target_space = observed_target_space
+    elif target_space is None:
         target_space = TargetSpace.OPERATION
 
     session_count = len({item.session_id for item in ordered})
